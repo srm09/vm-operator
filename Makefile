@@ -279,6 +279,7 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/api/... \
 		crd:crdVersions=v1 \
+		crd:generateEmbeddedObjectMeta=true \
 		output:crd:dir=$(CRD_ROOT) \
 		output:none
 	$(CONTROLLER_GEN) \

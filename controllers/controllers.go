@@ -14,7 +14,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinedeployment"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinereplicaset"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
@@ -63,6 +65,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		if err := providerconfigmap.AddToManager(ctx, mgr); err != nil {
 			return errors.Wrap(err, "failed to initialize ProviderConfigMap controller")
 		}
+	}
+	if err := virtualmachinedeployment.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize VirtualMachineDeployment controller")
+	}
+	if err := virtualmachinereplicaset.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize VirtualMachineReplicaSet  controller")
 	}
 	return nil
 }

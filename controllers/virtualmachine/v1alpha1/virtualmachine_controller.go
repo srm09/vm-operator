@@ -462,13 +462,14 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 	}()
 
 	if err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM); err != nil {
+		ctx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, false)
 		return err
 	}
 
 	ctx.VM.Status.Phase = vmopv1.Created
 	// Add this VM to prober manager if ReconcileNormal succeeds.
-	r.Prober.AddToProberManager(ctx.VM)
+	//r.Prober.AddToProberManager(ctx.VM)
 
 	ctx.Logger.Info("Finished Reconciling VirtualMachine")
 	return nil

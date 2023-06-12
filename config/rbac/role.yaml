@@ -114,6 +114,16 @@ rules:
   - get
   - list
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
   - imageregistry.vmware.com
   resources:
   - clustercontentlibraryitems
@@ -312,6 +322,23 @@ rules:
 - apiGroups:
   - vmoperator.vmware.com
   resources:
+  - virtualmachinedeployments
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinedeployments/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
   - virtualmachineimages
   verbs:
   - create
@@ -347,6 +374,26 @@ rules:
   - vmoperator.vmware.com
   resources:
   - virtualmachinepublishrequests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinereplicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinereplicasets/status
   verbs:
   - get
   - patch

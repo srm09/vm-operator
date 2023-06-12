@@ -20,7 +20,7 @@ if $KUBECTL get deployment -n ${VMOP_NAMESPACE} ${VMOP_DEPLOYMENT} >/dev/null 2>
 fi
 
 # Deploy and check cert-manager
-CERTMANAGER_NAMESPACE="vmware-system-cert-manager"
+CERTMANAGER_NAMESPACE="cert-manager"
 CERTMANAGER_DEPLOYMENTS=(
   cert-manager
   cert-manager-cainjector
