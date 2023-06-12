@@ -469,7 +469,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 
 	ctx.VM.Status.Phase = vmopv1.Created
 	// Add this VM to prober manager if ReconcileNormal succeeds.
-	//r.Prober.AddToProberManager(ctx.VM)
+	r.Prober.AddToProberManager(ctx.VM)
 
 	ctx.Logger.Info("Finished Reconciling VirtualMachine")
 	return nil
