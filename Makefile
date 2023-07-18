@@ -171,7 +171,7 @@ coverage-full: ## Show combined code coverage for unit and integration tests (op
 ## --------------------------------------
 
 .PHONY: $(MANAGER) manager-only
-manager-only: $(MANAGER) ## Build manager binary only
+manager-only: clean-bin $(MANAGER) ## Build manager binary only
 $(MANAGER):
 	CGO_ENABLED=0 go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
 
@@ -557,8 +557,12 @@ docker-remove: ## Remove the docker image
 ## --------------------------------------
 
 .PHONY: clean
-clean: docker-remove ## Remove all generated files
-	rm -rf bin *.out $(ARTIFACTS_DIR)
+clean: clean-bin docker-remove ## Remove all generated files
+	rm -rf *.out $(ARTIFACTS_DIR)
+
+.PHONY: clean-bin
+clean-bin:
+	rm -rf bin
 
 .PHONY: verify
 verify: prereqs ## Run static code analysis
