@@ -75,12 +75,8 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 		if err != nil {
 			return err
 		}
-
-		if vcVM == nil {
-			// Creation was not ready or blocked for some reason. We depend on the controller
-			// to eventually retry the create.
-			return nil
-		}
+		// We wanna requeue the object with some delay
+		return nil
 	}
 
 	return vs.updateVirtualMachine(vmCtx, vcVM, client)
@@ -281,8 +277,8 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 		// Set a few Status fields that we easily have on hand here. We will immediately call
 		// updateVirtualMachine() next which will set it all.
-		vmCtx.VM.Status.Phase = vmopv1.Created
-		vmCtx.VM.Status.UniqueID = vcVM.Reference().Value
+		//vmCtx.VM.Status.Phase = vmopv1.Created
+		//vmCtx.VM.Status.UniqueID = vcVM.Reference().Value
 	}
 
 	return vcVM, nil

@@ -27,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -378,7 +379,7 @@ func unitTestsReconcile() {
 				When("task succeeded but failed to parse item ID", func() {
 					JustBeforeEach(func() {
 						task = &types.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: constants.OVFCreateTaskDescriptionID,
 							State:         types.TaskInfoStateSuccess,
 							QueueTime:     time.Now().Add(time.Minute),
 						}
@@ -441,7 +442,7 @@ func unitTestsReconcile() {
 						fakeVMProvider.Lock()
 						fakeVMProvider.GetTasksByActIDFn = func(ctx goctx.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 							task := types.TaskInfo{
-								DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+								DescriptionId: constants.OVFCreateTaskDescriptionID,
 								State:         types.TaskInfoStateSuccess,
 								QueueTime:     time.Now().Add(time.Minute),
 								Result: types.ManagedObjectReference{Type: "ContentLibraryItem",
@@ -457,7 +458,7 @@ func unitTestsReconcile() {
 							fakeVMProvider.Lock()
 							fakeVMProvider.GetTasksByActIDFn = func(ctx goctx.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 								task := types.TaskInfo{
-									DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+									DescriptionId: constants.OVFCreateTaskDescriptionID,
 									State:         types.TaskInfoStateSuccess,
 									QueueTime:     time.Now().Add(time.Minute),
 									Result: types.ManagedObjectReference{Type: "ContentLibrary",
@@ -570,7 +571,7 @@ func unitTestsReconcile() {
 					fakeVMProvider.GetTasksByActIDFn = func(ctx goctx.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 						currentTime := time.Now()
 						task := types.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: constants.OVFCreateTaskDescriptionID,
 							State:         types.TaskInfoStateError,
 							StartTime:     &currentTime,
 						}
@@ -600,7 +601,7 @@ func unitTestsReconcile() {
 				JustBeforeEach(func() {
 					fakeVMProvider.GetTasksByActIDFn = func(ctx goctx.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 						task := types.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: constants.OVFCreateTaskDescriptionID,
 							State:         types.TaskInfoStateQueued,
 							QueueTime:     time.Now().Add(time.Minute),
 						}
@@ -625,7 +626,7 @@ func unitTestsReconcile() {
 				JustBeforeEach(func() {
 					fakeVMProvider.GetTasksByActIDFn = func(ctx goctx.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 						task := types.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: constants.OVFCreateTaskDescriptionID,
 							State:         types.TaskInfoStateRunning,
 							QueueTime:     time.Now(),
 						}

@@ -5,9 +5,12 @@ package context
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -77,9 +80,21 @@ type ControllerManagerContext struct {
 
 	// VMProviderA2 is the controller manager's VM Provider for v1alpha2
 	VMProviderA2 vmprovider.VirtualMachineProviderInterfaceA2
+
+	genericEventCache sync.Map
 }
 
 // String returns ControllerManagerName.
 func (c *ControllerManagerContext) String() string {
 	return c.Name
+}
+
+// GetGenericEventChannelFor returns a generic event channel for a resource
+// specified by the provided GroupVersionKind.
+func (c *ControllerManagerContext) GetGenericEventChannelFor(gvk schema.GroupVersionKind) chan event.GenericEvent {
+	if val, ok := c.genericEventCache.Load(gvk); ok {
+		return val.(chan event.GenericEvent)
+	}
+	val, _ := c.genericEventCache.LoadOrStore(gvk, make(chan event.GenericEvent))
+	return val.(chan event.GenericEvent)
 }

@@ -85,7 +85,9 @@ func (r *vmForVMClassPredicate) Update(e event.UpdateEvent) bool {
 		if err != nil {
 			r.log.Error(
 				err,
-				"Failed to match object for VMForVMClassPredicate.UpdateEvent")
+				"Failed to match object for VMForVMClassPredicate.UpdateEvent",
+				"namespace", e.ObjectNew.GetNamespace(),
+				"name", e.ObjectNew.GetName())
 		}
 		return false
 	}

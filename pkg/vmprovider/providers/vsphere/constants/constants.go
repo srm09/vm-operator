@@ -118,4 +118,17 @@ const (
 	V1alpha1SubnetMask = "V1alpha1_SubnetMask"
 	// V1alpha1FormatNameservers is an alias for versioned templating function V1alpha1_FormatNameservers.
 	V1alpha1FormatNameservers = "V1alpha1_FormatNameservers"
+
+	// Constants associated with activation ID and tasks.
+
+	// VAPICtxActIDHttpHeader represents the http header in vAPI to pass down the activation ID.
+	VAPICtxActIDHttpHeader = "vapi-ctx-actid"
+
+	// OVFDeployActivationIDAnnotation is the key used to save the OVF deploy task activation ID.
+	OVFDeployActivationIDAnnotation = pkg.VMOperatorKey + "/ovf-deploy-activation-id"
+	// OVFDeployTaskDescriptionID is the VAPI description of the OVF deploy task.
+	OVFDeployTaskDescriptionID = ""
+
+	// OVFCreateTaskDescriptionID is the VAPI description of the OVF create task.
+	OVFCreateTaskDescriptionID = "com.vmware.ovfs.LibraryItem.capture"
 )

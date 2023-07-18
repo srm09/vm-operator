@@ -24,8 +24,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/utils"
-	virtualmachinepublishrequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -156,7 +156,7 @@ func virtualMachinePublishRequestReconcile() {
 					intgFakeVMProvider.Lock()
 					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 						task := types.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: constants.OVFCreateTaskDescriptionID,
 							State:         types.TaskInfoStateQueued,
 						}
 						return []types.TaskInfo{task}, nil
@@ -188,7 +188,7 @@ func virtualMachinePublishRequestReconcile() {
 					intgFakeVMProvider.Lock()
 					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 						task := types.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: constants.OVFCreateTaskDescriptionID,
 							State:         types.TaskInfoStateRunning,
 						}
 						return []types.TaskInfo{task}, nil
@@ -220,7 +220,7 @@ func virtualMachinePublishRequestReconcile() {
 					intgFakeVMProvider.Lock()
 					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 						task := types.TaskInfo{
-							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							DescriptionId: constants.OVFCreateTaskDescriptionID,
 							State:         types.TaskInfoStateSuccess,
 							Result:        types.ManagedObjectReference{Type: "ContentLibraryItem", Value: fmt.Sprintf("clibitem-%s", itemID)},
 						}

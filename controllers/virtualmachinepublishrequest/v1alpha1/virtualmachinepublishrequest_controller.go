@@ -37,11 +37,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
 const (
-	finalizerName     = "virtualmachinepublishrequest.vmoperator.vmware.com"
-	TaskDescriptionID = "com.vmware.ovfs.LibraryItem.capture"
+	finalizerName = "virtualmachinepublishrequest.vmoperator.vmware.com"
 
 	// waitForTaskTimeout represents the timeout to wait for task existence in task manager.
 	// When calling `CreateOVF` API, there is no guarantee that we can get its task info due to
@@ -559,7 +559,7 @@ func (r *Reconciler) getPublishRequestTask(ctx *context.VirtualMachinePublishReq
 	}
 
 	if len(tasks) == 0 {
-		logger.V(5).Info("task doesn't exist", "actID", actID, "descriptionID", TaskDescriptionID)
+		logger.V(5).Info("task doesn't exist", "actID", actID, "descriptionID", constants.OVFCreateTaskDescriptionID)
 		return nil, nil
 	}
 
@@ -567,8 +567,8 @@ func (r *Reconciler) getPublishRequestTask(ctx *context.VirtualMachinePublishReq
 	// We would never send multiple CreateOvf requests with the same actID,
 	// so that we should never get multiple tasks.
 	publishTask := &tasks[0]
-	if publishTask.DescriptionId != TaskDescriptionID {
-		err = fmt.Errorf("failed to find expected task %s, found %s instead", TaskDescriptionID, publishTask.DescriptionId)
+	if publishTask.DescriptionId != constants.OVFCreateTaskDescriptionID {
+		err = fmt.Errorf("failed to find expected task %s, found %s instead", constants.OVFCreateTaskDescriptionID, publishTask.DescriptionId)
 		logger.Error(err, "task doesn't exist")
 		return nil, err
 	}
@@ -596,7 +596,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *context.VirtualMac
 	}
 
 	actID := getPublishRequestActID(ctx.VMPublishRequest)
-	logger := ctx.Logger.WithValues("actID", actID, "descriptionID", TaskDescriptionID)
+	logger := ctx.Logger.WithValues("actID", actID, "descriptionID", constants.OVFCreateTaskDescriptionID)
 
 	task, err := r.getPublishRequestTask(ctx)
 	if err != nil {
@@ -624,7 +624,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *context.VirtualMac
 		if time.Since(ctx.VMPublishRequest.Status.LastAttemptTime.Time) > waitForTaskTimeout {
 			// CreateOvf API failed to submit this task for some reason. In this case, retry VM publish.
 			ctx.Logger.Info("failed to create task, retry publishing this VM",
-				"taskName", TaskDescriptionID, "lastAttemptTime",
+				"taskName", constants.OVFCreateTaskDescriptionID, "lastAttemptTime",
 				ctx.VMPublishRequest.Status.LastAttemptTime.String())
 			return true, nil
 		}

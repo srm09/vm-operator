@@ -6,6 +6,8 @@ package session
 import (
 	"encoding/base64"
 	"fmt"
+	"net/http"
+	"time"
 
 	"k8s.io/utils/pointer"
 
@@ -91,14 +93,37 @@ func (s *Session) deployVMFromCL(
 		},
 	}
 
-	vmCtx.Logger.Info("Deploying Library Item", "itemID", item.ID, "deploy", deploy)
-
-	vmMoRef, err := vcenter.NewManager(s.Client.RestClient()).DeployLibraryItem(vmCtx, item.ID, deploy)
-	if err != nil {
-		return nil, err
+	activationID := fmt.Sprintf("%s", vmCtx.VM.UID)
+	if vmCtx.VM.Annotations == nil {
+		vmCtx.VM.Annotations = map[string]string{}
 	}
+	vmCtx.VM.Annotations[constants.OVFDeployActivationIDAnnotation] = activationID
 
-	return object.NewVirtualMachine(s.Client.VimClient(), *vmMoRef), nil
+	go func() {
+		vmCtx.Logger.Info("Deploying Library Item",
+			"itemID", item.ID,
+			"deploy", deploy,
+			"activationID", activationID,
+			"start time", time.Now().String())
+
+		restClient := s.Client.RestClient()
+		ctxHeader := restClient.WithHeader(vmCtx, http.Header{"vapi-ctx-actid": []string{activationID}})
+		vmMoRef, err := vcenter.NewManager(restClient).DeployLibraryItem(ctxHeader, item.ID, deploy)
+		if err != nil {
+			vmCtx.Logger.Error(err, "failed to deploy OVF")
+		} else {
+			vmCtx.Logger.Info("Deployed Library Item",
+				"itemID", item.ID,
+				"activationID", activationID,
+				"vmMoRef", vmMoRef.String(),
+				"end time", time.Now().String())
+		}
+
+		// TODO: Fetch the generic event channel for the VM object type,
+		// and send a generic event to start a new reconcile loop.
+	}()
+
+	return /*object.NewVirtualMachine(s.Client.VimClient(), *vmMoRef)*/ nil, nil
 }
 
 func (s *Session) cloneVMFromInventory(
