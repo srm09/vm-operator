@@ -17,7 +17,7 @@ func vcSimTests() {
 	Describe("CPUFreq", cpuFreqTests)
 	Describe("InitOvfCacheAndLockPool", initOvfCacheAndLockPoolTests)
 	Describe("ResourcePolicyTests", resourcePolicyTests)
-	Describe("VirtualMachine", vmTests)
+	FDescribe("VirtualMachine", vmTests)
 	Describe("VirtualMachineUtilsTest", vmUtilTests)
 }
 

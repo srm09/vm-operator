@@ -136,24 +136,38 @@ func unitTestsReconcile() {
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 		})
 
-		It("Should not call add to Prober Manager if CreateOrUpdate fails", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-				return errors.New(providerError)
-			}
+		Context("Prober Manager", func() {
+			It("Should not call add to Prober Manager if CreateOrUpdate fails", func() {
+				fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					return errors.New(providerError)
+				}
 
-			err := reconciler.ReconcileNormal(vmCtx)
-			Expect(err).To(HaveOccurred())
-			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeFalse())
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeFalse())
+			})
+
+			It("Should not call add to Prober Manager if VM is being created", func() {
+				fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1.VirtualMachine) {
+					vm.Status.Phase = vmopv1.Creating
+				}
+
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeFalse())
+			})
+
+			It("Should call add to Prober Manager if VM is successfully created", func() {
+				fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1.VirtualMachine) {
+					// Indicates that the VM creation routine was successful.
+					vm.Status.Phase = vmopv1.Created
+					fakeProbeManager.IsAddToProberManagerCalled = true
+				}
+
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
+			})
 		})
 
-		It("Should call add to Prober Manager if ReconcileNormal succeeds", func() {
-			fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1.VirtualMachine) {
-				fakeProbeManager.IsAddToProberManagerCalled = true
-			}
-
-			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
-			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
-		})
 	})
 
 	Context("ReconcileDelete", func() {

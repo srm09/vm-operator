@@ -127,7 +127,7 @@ const (
 	// OVFDeployActivationIDAnnotation is the key used to save the OVF deploy task activation ID.
 	OVFDeployActivationIDAnnotation = pkg.VMOperatorKey + "/ovf-deploy-activation-id"
 	// OVFDeployTaskDescriptionID is the VAPI description of the OVF deploy task.
-	OVFDeployTaskDescriptionID = ""
+	OVFDeployTaskDescriptionID = "com.vmware.ovfs.LibraryItem.instantiate"
 
 	// OVFCreateTaskDescriptionID is the VAPI description of the OVF create task.
 	OVFCreateTaskDescriptionID = "com.vmware.ovfs.LibraryItem.capture"

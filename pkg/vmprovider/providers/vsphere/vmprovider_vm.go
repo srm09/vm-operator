@@ -71,12 +71,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 	}
 
 	if vcVM == nil {
-		vcVM, err = vs.createVirtualMachine(vmCtx, client)
-		if err != nil {
-			return err
-		}
-		// We wanna requeue the object with some delay
-		return nil
+		return vs.createVirtualMachine(vmCtx, client)
 	}
 
 	return vs.updateVirtualMachine(vmCtx, vcVM, client)
@@ -219,11 +214,11 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 
 func (vs *vSphereVMProvider) createVirtualMachine(
 	vmCtx context.VirtualMachineContext,
-	vcClient *vcclient.Client) (*object.VirtualMachine, error) {
+	vcClient *vcclient.Client) error {
 
 	createArgs, err := vs.vmCreateGetArgs(vmCtx, vcClient)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Historically this is about the point when we say we're creating but there
@@ -232,56 +227,48 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	err = vs.vmCreateDoPlacement(vmCtx, vcClient, createArgs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err = vs.vmCreateGetFolderAndRPMoIDs(vmCtx, vcClient, createArgs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err = vs.vmCreateIsReady(vmCtx, vcClient, createArgs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// BMV: This is about where we used to do this check but it prb make more sense
 	// to do earlier, as to limit wasted work.
 	maxDeployThreads, ok := vmCtx.Value(context.MaxDeployThreadsContextKey).(int)
 	if !ok {
-		return nil, fmt.Errorf("MaxDeployThreadsContextKey missing from context")
+		return fmt.Errorf("MaxDeployThreadsContextKey missing from context")
 	}
 
 	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx, maxDeployThreads)
 	if !allowed {
-		return nil, nil
+		return nil
 	}
 	defer createDeferFn()
 
-	var vcVM *object.VirtualMachine
-	{
-		// Hack - create just enough of the Session that's needed for create
-		vmCtx.Logger.Info("Creating VirtualMachine")
+	//var vcVM *object.VirtualMachine
 
-		ses := &session.Session{
-			K8sClient: vs.k8sClient,
-			Client:    vcClient,
-			Finder:    vcClient.Finder(),
-		}
+	// Hack - create just enough of the Session that's needed for create
+	vmCtx.Logger.Info("Creating VirtualMachine")
 
-		vcVM, err = ses.CreateVirtualMachine(vmCtx, createArgs)
-		if err != nil {
-			vmCtx.Logger.Error(err, "CreateVirtualMachine failed")
-			return nil, err
-		}
-
-		// Set a few Status fields that we easily have on hand here. We will immediately call
-		// updateVirtualMachine() next which will set it all.
-		//vmCtx.VM.Status.Phase = vmopv1.Created
-		//vmCtx.VM.Status.UniqueID = vcVM.Reference().Value
+	ses := &session.Session{
+		K8sClient: vs.k8sClient,
+		Client:    vcClient,
+		Finder:    vcClient.Finder(),
 	}
 
-	return vcVM, nil
+	err = ses.CreateVirtualMachine(vmCtx, createArgs)
+	if err != nil {
+		vmCtx.Logger.Error(err, "CreateVirtualMachine failed")
+	}
+	return err
 }
 
 func (vs *vSphereVMProvider) updateVirtualMachine(

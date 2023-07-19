@@ -381,9 +381,9 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if result, err := r.ReconcileNormal(vmCtx); err != nil {
+	if err := r.ReconcileNormal(vmCtx); err != nil {
 		vmCtx.Logger.Error(err, "Failed to reconcile VirtualMachine")
-		return result, err
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{RequeueAfter: requeueDelay(vmCtx)}, nil
@@ -439,13 +439,13 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) (reterr
 }
 
 // ReconcileNormal processes a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (_ ctrl.Result, reterr error) {
+func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr error) {
 	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
 		// The finalizer must be present before proceeding in order to ensure that the VM will
 		// be cleaned up. Return immediately after here to let the patcher helper update the
 		// object, and then we'll proceed on the next reconciliation.
 		controllerutil.AddFinalizer(ctx.VM, finalizerName)
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	ctx.Logger.Info("Reconciling VirtualMachine")
@@ -469,49 +469,49 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (_ ctrl
 		r.vmMetrics.RegisterVMCreateOrUpdateMetrics(ctx)
 	}()
 
-	result, err := r.checkTaskAndRequeue(ctx)
-	if err != nil {
-		return result, err
-	}
-	if !result.IsZero() {
-		return result, nil
+	if err := r.checkDeployTask(ctx); err != nil {
+		ctx.Logger.Error(err, "Failed to query OVF deploy task")
+		return err
 	}
 
 	if err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM); err != nil {
 		ctx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, false)
-		return ctrl.Result{}, err
+		return err
 	}
 
-	//ctx.VM.Status.Phase = vmopv1.Created
-	// Add this VM to prober manager if ReconcileNormal succeeds.
-	r.Prober.AddToProberManager(ctx.VM)
+	if ctx.VM.Status.Phase != vmopv1.Creating {
+		// Add this VM to prober manager once VM creation succeeds.
+		r.Prober.AddToProberManager(ctx.VM)
+	}
 
 	ctx.Logger.Info("Finished Reconciling VirtualMachine")
-	return ctrl.Result{}, nil
+	return nil
 }
 
-func (r *Reconciler) checkTaskAndRequeue(ctx *context.VirtualMachineContext) (ctrl.Result, error) {
-	task, err := r.getPublishRequestTask(ctx)
+func (r *Reconciler) checkDeployTask(ctx *context.VirtualMachineContext) error {
+	task, err := r.getOVFDeployTask(ctx)
 	if err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
+	// TODO: Consider the case where the activation ID task is not immediately recoverable.
+	// In this case, check if a particular time period for the task to be available has exceeded,
+	// clear the activation ID and surface error.
 	if task == nil {
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	switch task.State {
 	case vimtypes.TaskInfoStateQueued:
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return /*ctrl.Result{RequeueAfter: 10 * time.Second}, */ nil
 	case vimtypes.TaskInfoStateRunning:
-		// CreateOVF is still in progress
 		// TODO: Add task Progress info.
 		ctx.Logger.V(5).Info("Deploy OVF is still in progress", "progress", task.Progress)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return /*ctrl.Result{RequeueAfter: 10 * time.Second},*/ nil
 	case vimtypes.TaskInfoStateSuccess:
 		// Publish request succeeds. Update Uploaded condition.
 		ctx.Logger.Info("Deploy OVF task has succeeded", "result", task.Result)
-		return ctrl.Result{}, nil
+		return /*ctrl.Result{},*/ nil
 	case vimtypes.TaskInfoStateError:
 		errMsg := "failed to publish source VM"
 		if task.Error != nil {
@@ -519,12 +519,13 @@ func (r *Reconciler) checkTaskAndRequeue(ctx *context.VirtualMachineContext) (ct
 		}
 		ctx.Logger.Error(errors.New(errMsg), "Deploy OVF task failed, will retry this operation", "actID",
 			task.ActivationId, "descriptionID", task.DescriptionId)
-		return ctrl.Result{}, errors.New(errMsg)
+		return /*ctrl.Result{}, */ errors.New(errMsg)
+	default:
+		return nil
 	}
-	return ctrl.Result{}, nil
 }
 
-func getPublishRequestActID(vm *vmopv1.VirtualMachine) string {
+func getOVFDeployActivationID(vm *vmopv1.VirtualMachine) string {
 	if len(vm.Annotations) > 0 {
 		if actID, ok := vm.Annotations[constants.OVFDeployActivationIDAnnotation]; ok {
 			return actID
@@ -533,8 +534,8 @@ func getPublishRequestActID(vm *vmopv1.VirtualMachine) string {
 	return ""
 }
 
-func (r *Reconciler) getPublishRequestTask(ctx *context.VirtualMachineContext) (*vimtypes.TaskInfo, error) {
-	actID := getPublishRequestActID(ctx.VM)
+func (r *Reconciler) getOVFDeployTask(ctx *context.VirtualMachineContext) (*vimtypes.TaskInfo, error) {
+	actID := getOVFDeployActivationID(ctx.VM)
 	logger := ctx.Logger.WithValues("activationID", actID)
 
 	if actID == "" {
@@ -552,19 +553,16 @@ func (r *Reconciler) getPublishRequestTask(ctx *context.VirtualMachineContext) (
 		return nil, nil
 	}
 
-	descriptionID := "com.vmware.ovfs.LibraryItem.instantiate"
 	// Return the first task.
 	// We would never send multiple CreateOvf requests with the same actID,
 	// so that we should never get multiple tasks.
 	deployTask := &tasks[0]
-	if deployTask.DescriptionId != descriptionID {
-		err = fmt.Errorf("failed to find expected task %s, found %s instead", descriptionID, deployTask.DescriptionId)
+	if deployTask.DescriptionId != constants.OVFDeployTaskDescriptionID {
+		err = fmt.Errorf("failed to find expected task %s, found %s instead", constants.OVFDeployTaskDescriptionID, deployTask.DescriptionId)
 		logger.Error(err, "task doesn't exist")
 		return nil, err
 	}
-	logger.Info("found task with activation ID",
-		"task", deployTask,
-	)
+	logger.Info("found task with activation ID", "task", deployTask)
 
 	return deployTask, nil
 }

@@ -55,10 +55,7 @@ type VMCreateArgs struct {
 	DatastoreMoID    string // gce2e only: used if StorageProfileID is unset
 }
 
-func (s *Session) deployVMFromCL(
-	vmCtx context.VirtualMachineContext,
-	item *library.Item,
-	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
+func (s *Session) deployVMFromCL(vmCtx context.VirtualMachineContext, item *library.Item, createArgs *VMCreateArgs) error {
 
 	deploymentSpec := vcenter.DeploymentSpec{
 		Name:                vmCtx.VM.Name,
@@ -75,7 +72,7 @@ func (s *Session) deployVMFromCL(
 	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && createArgs.ConfigSpec != nil {
 		configSpecXML, err := util.MarshalConfigSpecToXML(createArgs.ConfigSpec)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		deploymentSpec.VmConfigSpec = &vcenter.VmConfigSpec{
@@ -107,7 +104,9 @@ func (s *Session) deployVMFromCL(
 			"start time", time.Now().String())
 
 		restClient := s.Client.RestClient()
-		ctxHeader := restClient.WithHeader(vmCtx, http.Header{"vapi-ctx-actid": []string{activationID}})
+		ctxHeader := restClient.WithHeader(vmCtx, http.Header{
+			constants.VAPICtxActIDHttpHeader: []string{activationID},
+		})
 		vmMoRef, err := vcenter.NewManager(restClient).DeployLibraryItem(ctxHeader, item.ID, deploy)
 		if err != nil {
 			vmCtx.Logger.Error(err, "failed to deploy OVF")
@@ -123,46 +122,42 @@ func (s *Session) deployVMFromCL(
 		// and send a generic event to start a new reconcile loop.
 	}()
 
-	return /*object.NewVirtualMachine(s.Client.VimClient(), *vmMoRef)*/ nil, nil
+	return nil
 }
 
-func (s *Session) cloneVMFromInventory(
-	vmCtx context.VirtualMachineContext,
-	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
+func (s *Session) cloneVMFromInventory(vmCtx context.VirtualMachineContext, createArgs *VMCreateArgs) error {
 
 	srcVMName := vmCtx.VM.Spec.ImageName
 
 	srcVM, err := s.Finder.VirtualMachine(vmCtx, srcVMName)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to find clone source VM: %s", srcVMName)
+		return errors.Wrapf(err, "failed to find clone source VM: %s", srcVMName)
 	}
 
 	cloneSpec, err := s.createCloneSpec(vmCtx, createArgs, srcVM)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create CloneSpec")
+		return errors.Wrap(err, "failed to create CloneSpec")
 	}
 
 	// We always set cloneSpec.Location.Folder so use that to get the parent folder object.
 	folder := object.NewFolder(s.Client.VimClient(), *cloneSpec.Location.Folder)
 
-	vmMoRef, err := res.NewVMFromObject(srcVM).Clone(vmCtx, folder, cloneSpec)
+	_, err = res.NewVMFromObject(srcVM).Clone(vmCtx, folder, cloneSpec)
 	if err != nil {
-		return nil, errors.Wrapf(err, "clone from source VM %s failed", srcVMName)
+		return errors.Wrapf(err, "clone from source VM %s failed", srcVMName)
 	}
 
-	return object.NewVirtualMachine(s.Client.VimClient(), *vmMoRef), nil
+	return nil
 }
 
-func (s *Session) cloneVMFromContentLibrary(
-	vmCtx context.VirtualMachineContext,
-	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
+func (s *Session) cloneVMFromContentLibrary(vmCtx context.VirtualMachineContext, createArgs *VMCreateArgs) error {
 
 	item, err := s.Client.ContentLibClient().GetLibraryItem(
 		vmCtx,
 		createArgs.ContentLibraryUUID,
 		createArgs.VMImageStatus.ImageName, true)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	switch item.Type {
@@ -172,13 +167,11 @@ func (s *Session) cloneVMFromContentLibrary(
 		// BMV: Does this work? We'll try to find the source VM with the VM.Spec.ImageName name.
 		return s.cloneVMFromInventory(vmCtx, createArgs)
 	default:
-		return nil, errors.Errorf("item %v not a supported type: %s", item.Name, item.Type)
+		return errors.Errorf("item %v not a supported type: %s", item.Name, item.Type)
 	}
 }
 
-func (s *Session) CreateVirtualMachine(
-	vmCtx context.VirtualMachineContext,
-	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
+func (s *Session) CreateVirtualMachine(vmCtx context.VirtualMachineContext, createArgs *VMCreateArgs) error {
 
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
 	// not a supported workflow but we have tests that use this.

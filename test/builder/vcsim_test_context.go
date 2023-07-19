@@ -49,6 +49,7 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
@@ -374,8 +375,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 		Certificates: []tls.Certificate{
 			tlsCert,
 		},
-		PreferServerCipherSuites: true,
-		MinVersion:               tls.VersionTLS12,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	c.model = vcModel
@@ -768,6 +768,66 @@ func (c *TestContextForVCSim) GetVMFromMoID(moID string) *object.VirtualMachine 
 	vm, ok := objRef.(*object.VirtualMachine)
 	Expect(ok).To(BeTrue())
 	return vm
+}
+
+// TODO: MoRef is not a good enough indication that it is completely created
+// More verification might be necessary
+func (c *TestContextForVCSim) GetVMFromInventory(vm *vmopv1.VirtualMachine) *object.VirtualMachine {
+	//var folder *object.Folder
+	var folderMoId string
+	if c.withFaultDomains {
+		Expect(vm.Labels).To(HaveKey(topology.KubernetesTopologyZoneLabelKey))
+		azName, _ := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+
+		az := &topologyv1.AvailabilityZone{}
+		Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
+		Expect(az.Spec.Namespaces).To(HaveKey(vm.Namespace))
+		nsInfo, ok := az.Spec.Namespaces[vm.Namespace]
+		Expect(ok).To(BeTrue())
+
+		folderMoId = nsInfo.FolderMoId
+		/*objRef, err := c.Finder.ObjectReference(c, types.ManagedObjectReference{
+			Type:  "Folder",
+			Value: nsInfo.FolderMoId,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		folder = objRef.(*object.Folder)*/
+	} else {
+		// Since the folder info is stored on the namespace as an annotation
+		ns := corev1.Namespace{}
+		Expect(c.Client.Get(c, client.ObjectKey{Name: vm.Namespace}, &ns)).To(Succeed())
+		Expect(ns.Annotations).ToNot(BeEmpty())
+		Expect(ns.Annotations).To(HaveKey("vmware-system-vm-folder"))
+		folderMoId = ns.Annotations["vmware-system-vm-folder"]
+	}
+	/*vms, err := c.Finder.VirtualMachineList(c, "*")
+	Expect(err).ToNot(HaveOccurred())
+	if len(vms) == 0 {
+		return nil
+	}
+	for _, tmp := range vms {
+		if tmp.Name() == vm.Name {
+			fmt.Println(tmp.InventoryPath)
+			fmt.Println(folder.InventoryPath)
+		}
+	}*/
+	objRef, err := c.Finder.ObjectReference(c, types.ManagedObjectReference{
+		Type:  "Folder",
+		Value: folderMoId,
+	})
+	Expect(err).ToNot(HaveOccurred())
+	//folder = objRef.(*object.Folder)
+
+	vmRef, err := object.NewSearchIndex(c.VCClient.Client).FindChild(c, objRef, vm.Name)
+	if err != nil || vmRef == nil {
+		return nil
+	}
+
+	return c.GetVMFromMoID(vmRef.Reference().Value)
+	/*
+		vcVM, ok := vmRef.(*object.VirtualMachine)
+		Expect(ok).To(BeTrue())
+		return vcVM*/
 }
 
 func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName, childName string) *object.ResourcePool {

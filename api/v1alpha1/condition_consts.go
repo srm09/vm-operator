@@ -132,3 +132,7 @@ const (
 	// VirtualMachineImage provider doesn't meet security compliance requirements.
 	VirtualMachineImageProviderSecurityNotCompliantReason = "VirtualMachineImageProviderSecurityNotCompliant"
 )
+
+const (
+	VirtualMachineProvisionedCondition ConditionType = "VirtualMachineProvisioned"
+)

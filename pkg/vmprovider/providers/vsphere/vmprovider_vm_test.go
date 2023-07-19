@@ -75,6 +75,141 @@ func vmTests() {
 		Expect(os.Setenv(lib.NetworkProviderType, oldNetworkProviderType)).To(Succeed())
 	})
 
+	FContext("Create VirtualMachine", func() {
+		var (
+			vm      *vmopv1.VirtualMachine
+			vmClass *vmopv1.VirtualMachineClass
+		)
+
+		BeforeEach(func() {
+			testConfig.WithContentLibrary = true
+			vmClass = builder.DummyVirtualMachineClass()
+			vm = builder.DummyBasicVirtualMachine("test-vm", "")
+		})
+
+		AfterEach(func() {
+			vmClass = nil
+			vm = nil
+		})
+
+		JustBeforeEach(func() {
+			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+
+			vmClassBinding := builder.DummyVirtualMachineClassBinding(vmClass.Name, nsInfo.Namespace)
+			Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+
+			vmImage := &vmopv1.VirtualMachineImage{}
+			if testConfig.WithContentLibrary {
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, vmImage)).To(Succeed())
+			} else {
+				// BMV: Without a CL is broken - and has been for a long while - since we assume the
+				// VM Image will always have a ContentLibraryProvider owner. Hack around that here so
+				// we can continue to test the VM clone path.
+				vsphere.SkipVMImageCLProviderCheck = true
+
+				// Use the default VM by vcsim as the source.
+				vmImage = builder.DummyVirtualMachineImage("DC0_C0_RP0_VM0")
+				Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
+			}
+
+			vm.Namespace = nsInfo.Namespace
+			vm.Spec.ClassName = vmClass.Name
+			vm.Spec.ImageName = vmImage.Name
+			vm.Spec.StorageClass = ctx.StorageClassName
+		})
+
+		AfterEach(func() {
+			vsphere.SkipVMImageCLProviderCheck = false
+		})
+
+		createAndGetVcVM := func(
+			ctx *builder.TestContextForVCSim,
+			vm *vmopv1.VirtualMachine) (*object.VirtualMachine, error) {
+
+			err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+			if err != nil {
+				return nil, err
+			}
+
+			Eventually(func() *object.VirtualMachine {
+				return ctx.GetVMFromInventory(vm)
+			}, "10s", "1s").ShouldNot(BeNil())
+
+			vcVM := ctx.GetVMFromInventory(vm)
+			fmt.Println(vcVM)
+			return vcVM, nil
+		}
+
+		It("Basic VM", func() {
+			vcVM, err := createAndGetVcVM(ctx, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vcVM).ToNot(BeNil())
+
+			var o mo.VirtualMachine
+			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+			By("has expected Status values", func() {
+				Expect(vm.Status.Phase).To(Equal(vmopv1.Creating))
+				/*Expect(vm.Status.PowerState).To(Equal(vm.Spec.PowerState))
+				Expect(vm.Status.Host).ToNot(BeEmpty())
+				Expect(vm.Status.InstanceUUID).To(And(Not(BeEmpty()), Equal(o.Config.InstanceUuid)))
+				Expect(vm.Status.BiosUUID).To(And(Not(BeEmpty()), Equal(o.Config.Uuid)))*/
+			})
+
+			By("has expected inventory path", func() {
+				Expect(vcVM.InventoryPath).To(HaveSuffix(fmt.Sprintf("/%s/%s", nsInfo.Namespace, vm.Name)))
+			})
+
+			By("has expected namespace resource pool", func() {
+				rp, err := vcVM.ResourcePool(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
+				Expect(nsRP).ToNot(BeNil())
+				Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
+			})
+
+			/*By("has expected power state", func() {
+				Expect(o.Summary.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
+			})*/
+
+			vmClass := &vmopv1.VirtualMachineClass{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+			vmClassRes := vmClass.Spec.Policies.Resources
+
+			By("has expected CpuAllocation", func() {
+				Expect(o.Config.CpuAllocation).ToNot(BeNil())
+
+				// The vcsim ESX hardcoded CPU frequency that is not exported by govmomi.
+				const freq = 2294
+
+				reservation := o.Config.CpuAllocation.Reservation
+				Expect(reservation).ToNot(BeNil())
+				Expect(*reservation).To(Equal(virtualmachine.CPUQuantityToMhz(vmClassRes.Requests.Cpu, freq)))
+				limit := o.Config.CpuAllocation.Limit
+				Expect(limit).ToNot(BeNil())
+				Expect(*limit).To(Equal(virtualmachine.CPUQuantityToMhz(vmClassRes.Limits.Cpu, freq)))
+			})
+
+			By("has expected MemoryAllocation", func() {
+				Expect(o.Config.MemoryAllocation).ToNot(BeNil())
+
+				reservation := o.Config.MemoryAllocation.Reservation
+				Expect(reservation).ToNot(BeNil())
+				Expect(*reservation).To(Equal(virtualmachine.MemoryQuantityToMb(vmClassRes.Requests.Memory)))
+				limit := o.Config.MemoryAllocation.Limit
+				Expect(limit).ToNot(BeNil())
+				Expect(*limit).To(Equal(virtualmachine.MemoryQuantityToMb(vmClassRes.Limits.Memory)))
+			})
+
+			By("has expected hardware config", func() {
+				Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+				Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+			})
+
+			// TODO: More assertions!
+		})
+	})
+
 	Context("Create/Update/Delete VirtualMachine", func() {
 		var (
 			vm      *vmopv1.VirtualMachine
