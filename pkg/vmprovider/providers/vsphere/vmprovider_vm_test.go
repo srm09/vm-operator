@@ -131,12 +131,11 @@ func vmTests() {
 				return nil, err
 			}
 
-			Eventually(func() *object.VirtualMachine {
+			EventuallyWithOffset(1, func() *object.VirtualMachine {
 				return ctx.GetVMFromInventory(vm)
 			}, "10s", "1s").ShouldNot(BeNil())
 
-			vcVM := ctx.GetVMFromInventory(vm)
-			return vcVM, nil
+			return ctx.GetVMFromInventory(vm), nil
 		}
 
 		It("Basic VM", func() {
@@ -977,9 +976,98 @@ func vmTests() {
 				})
 			})
 		})
+
+		Context("When Instance Storage FSS is enabled", func() {
+			BeforeEach(func() {
+				testConfig.WithInstanceStorage = true
+			})
+
+			expectInstanceStorageVolumes := func(
+				vm *vmopv1.VirtualMachine,
+				isStorage vmopv1.InstanceStorage) {
+
+				ExpectWithOffset(1, isStorage.Volumes).ToNot(BeEmpty())
+				isVolumes := instancestorage.FilterVolumes(vm)
+				ExpectWithOffset(1, isVolumes).To(HaveLen(len(isStorage.Volumes)))
+
+				for _, isVol := range isStorage.Volumes {
+					found := false
+
+					for idx, vol := range isVolumes {
+						claim := vol.PersistentVolumeClaim.InstanceVolumeClaim
+						if claim.StorageClass == isStorage.StorageClass && claim.Size == isVol.Size {
+							isVolumes = append(isVolumes[:idx], isVolumes[idx+1:]...)
+							found = true
+							break
+						}
+					}
+
+					ExpectWithOffset(1, found).To(BeTrue(), "failed to find instance storage volume for %v", isVol)
+				}
+			}
+
+			It("creates VM without instance storage", func() {
+				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+			})
+
+			FIt("create VM with instance storage", func() {
+				Expect(vm.Spec.Volumes).To(BeEmpty())
+
+				vmClass := &vmopv1.VirtualMachineClass{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+				vmClass.Spec.Hardware.InstanceStorage = vmopv1.InstanceStorage{
+					StorageClass: vm.Spec.StorageClass,
+					Volumes: []vmopv1.InstanceStorageVolume{
+						{
+							Size: resource.MustParse("256Gi"),
+						},
+						{
+							Size: resource.MustParse("512Gi"),
+						},
+					},
+				}
+				Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
+
+				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				Expect(err).To(MatchError("instance storage PVCs are not bound yet"))
+
+				By("Instance storage volumes should be added to VM", func() {
+					Expect(instancestorage.IsConfigured(vm)).To(BeTrue())
+					expectInstanceStorageVolumes(vm, vmClass.Spec.Hardware.InstanceStorage)
+				})
+				isVol0 := vm.Spec.Volumes[0]
+
+				By("Placement should have been done", func() {
+					Expect(vm.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+					Expect(vm.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
+				})
+
+				By("simulate volume controller workflow", func() {
+					// Simulate what would be set by volume controller.
+					vm.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = ""
+
+					err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("status update pending for persistent volume: %s on VM", isVol0.Name)))
+
+					// Simulate what would be set by the volume controller.
+					for _, vol := range vm.Spec.Volumes {
+						vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
+							Name:     vol.Name,
+							Attached: true,
+						})
+					}
+				})
+
+				By("VM is now created", func() {
+					err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+		})
 	})
 
-	FContext("Create/Update/Delete VirtualMachine", func() {
+	Context("Create/Update/Delete VirtualMachine", func() {
 		var (
 			vm      *vmopv1.VirtualMachine
 			vmClass *vmopv1.VirtualMachineClass
@@ -1036,7 +1124,7 @@ func vmTests() {
 				return nil, err
 			}
 
-			Eventually(func() *object.VirtualMachine {
+			EventuallyWithOffset(1, func() *object.VirtualMachine {
 				return ctx.GetVMFromInventory(vm)
 			}, "10s", "1s").ShouldNot(BeNil())
 
@@ -2211,96 +2299,6 @@ func vmTests() {
 				})
 			})
 
-			Context("When Instance Storage FSS is enabled", func() {
-				BeforeEach(func() {
-					testConfig.WithInstanceStorage = true
-				})
-
-				expectInstanceStorageVolumes := func(
-					vm *vmopv1.VirtualMachine,
-					isStorage vmopv1.InstanceStorage) {
-
-					ExpectWithOffset(1, isStorage.Volumes).ToNot(BeEmpty())
-					isVolumes := instancestorage.FilterVolumes(vm)
-					ExpectWithOffset(1, isVolumes).To(HaveLen(len(isStorage.Volumes)))
-
-					for _, isVol := range isStorage.Volumes {
-						found := false
-
-						for idx, vol := range isVolumes {
-							claim := vol.PersistentVolumeClaim.InstanceVolumeClaim
-							if claim.StorageClass == isStorage.StorageClass && claim.Size == isVol.Size {
-								isVolumes = append(isVolumes[:idx], isVolumes[idx+1:]...)
-								found = true
-								break
-							}
-						}
-
-						ExpectWithOffset(1, found).To(BeTrue(), "failed to find instance storage volume for %v", isVol)
-					}
-				}
-
-				It("creates VM without instance storage", func() {
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
-				})
-
-				It("create VM with instance storage", func() {
-					Expect(vm.Spec.Volumes).To(BeEmpty())
-
-					vmClass := &vmopv1.VirtualMachineClass{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
-					vmClass.Spec.Hardware.InstanceStorage = vmopv1.InstanceStorage{
-						StorageClass: vm.Spec.StorageClass,
-						Volumes: []vmopv1.InstanceStorageVolume{
-							{
-								Size: resource.MustParse("256Gi"),
-							},
-							{
-								Size: resource.MustParse("512Gi"),
-							},
-						},
-					}
-					Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
-
-					err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-					Expect(err).To(MatchError("instance storage PVCs are not bound yet"))
-
-					By("Instance storage volumes should be added to VM", func() {
-						Expect(instancestorage.IsConfigured(vm)).To(BeTrue())
-						expectInstanceStorageVolumes(vm, vmClass.Spec.Hardware.InstanceStorage)
-					})
-					isVol0 := vm.Spec.Volumes[0]
-
-					By("Placement should have been done", func() {
-						Expect(vm.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
-						Expect(vm.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
-					})
-
-					By("simulate volume controller workflow", func() {
-						// Simulate what would be set by volume controller.
-						vm.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = ""
-
-						err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("status update pending for persistent volume: %s on VM", isVol0.Name)))
-
-						// Simulate what would be set by the volume controller.
-						for _, vol := range vm.Spec.Volumes {
-							vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
-								Name:     vol.Name,
-								Attached: true,
-							})
-						}
-					})
-
-					By("VM is now created", func() {
-						_, err = createOrUpdateAndGetVcVM(ctx, vm)
-						Expect(err).ToNot(HaveOccurred())
-					})
-				})
-			})
-
 			It("Powers VM off", func() {
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
@@ -2771,26 +2769,27 @@ func vmTests() {
 
 			It("Returns error with non-existence cluster module", func() {
 				vm.Annotations["vsphere-cluster-module-group"] = "bogusClusterMod"
-				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				_, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).To(MatchError("ClusterModule bogusClusterMod not found"))
 			})
 		})
 
 		Context("Delete VM", func() {
 			JustBeforeEach(func() {
-				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+				_, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
 			})
 
 			Context("when the VM is off", func() {
-				BeforeEach(func() {
-					vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
-				})
-
 				It("deletes the VM", func() {
+					By("powering off the VM", func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+						Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+					})
 					Expect(vm.Status.PowerState).To(Equal(vmopv1.VirtualMachinePoweredOff))
 
 					uniqueID := vm.Status.UniqueID
-					Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+					Expect(ctx.GetVMFromInventory(vm)).ToNot(BeNil())
 
 					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 					Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
@@ -2849,7 +2848,8 @@ func vmTests() {
 
 		Context("Guest Heartbeat", func() {
 			JustBeforeEach(func() {
-				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+				_, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
 			})
 
 			It("return guest heartbeat", func() {
@@ -2862,7 +2862,9 @@ func vmTests() {
 
 		Context("Web console ticket", func() {
 			JustBeforeEach(func() {
-				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vcVM).ToNot(BeNil())
 			})
 
 			It("return ticket", func() {
@@ -2875,7 +2877,9 @@ func vmTests() {
 
 		Context("VM hardware version", func() {
 			JustBeforeEach(func() {
-				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vcVM).ToNot(BeNil())
 			})
 
 			It("return version", func() {
@@ -2886,20 +2890,25 @@ func vmTests() {
 		})
 
 		Context("ResVMToVirtualMachineImage", func() {
+			var vcVM *object.VirtualMachine
+
 			JustBeforeEach(func() {
-				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+				var err error
+				vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vcVM).ToNot(BeNil())
 			})
 
 			// ResVMToVirtualMachineImage isn't actually used.
 			It("returns a VirtualMachineImage", func() {
-				vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
-				Expect(vcVM).ToNot(BeNil())
+				vm := ctx.GetVMFromMoID(vcVM.Reference().Value)
+				Expect(vm).ToNot(BeNil())
 
 				// TODO: Need to convert this VM to a vApp (and back).
 				// annotations := map[string]string{}
 				// annotations[versionKey] = versionVal
 
-				image, err := vsphere.ResVMToVirtualMachineImage(ctx, vcVM)
+				image, err := vsphere.ResVMToVirtualMachineImage(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(image).ToNot(BeNil())
 				Expect(image.Name).ToNot(BeEmpty())

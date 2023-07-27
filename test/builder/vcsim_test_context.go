@@ -776,58 +776,54 @@ func (c *TestContextForVCSim) GetVMFromInventory(vm *vmopv1.VirtualMachine) *obj
 	//var folder *object.Folder
 	var folderMoId string
 	if c.withFaultDomains {
-		Expect(vm.Labels).To(HaveKey(topology.KubernetesTopologyZoneLabelKey))
+		ExpectWithOffset(1, vm.Labels).To(HaveKey(topology.KubernetesTopologyZoneLabelKey))
 		azName, _ := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 
 		az := &topologyv1.AvailabilityZone{}
-		Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
-		Expect(az.Spec.Namespaces).To(HaveKey(vm.Namespace))
+		ExpectWithOffset(1, c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
+		ExpectWithOffset(1, az.Spec.Namespaces).To(HaveKey(vm.Namespace))
 		nsInfo, ok := az.Spec.Namespaces[vm.Namespace]
-		Expect(ok).To(BeTrue())
+		ExpectWithOffset(1, ok).To(BeTrue())
 
 		folderMoId = nsInfo.FolderMoId
-		/*objRef, err := c.Finder.ObjectReference(c, types.ManagedObjectReference{
-			Type:  "Folder",
-			Value: nsInfo.FolderMoId,
-		})
-		Expect(err).ToNot(HaveOccurred())
-		folder = objRef.(*object.Folder)*/
 	} else {
 		// Since the folder info is stored on the namespace as an annotation
 		ns := corev1.Namespace{}
-		Expect(c.Client.Get(c, client.ObjectKey{Name: vm.Namespace}, &ns)).To(Succeed())
-		Expect(ns.Annotations).ToNot(BeEmpty())
-		Expect(ns.Annotations).To(HaveKey("vmware-system-vm-folder"))
+		ExpectWithOffset(1, c.Client.Get(c, client.ObjectKey{Name: vm.Namespace}, &ns)).To(Succeed())
+		ExpectWithOffset(1, ns.Annotations).ToNot(BeEmpty())
+		ExpectWithOffset(1, ns.Annotations).To(HaveKey("vmware-system-vm-folder"))
 		folderMoId = ns.Annotations["vmware-system-vm-folder"]
 	}
-	/*vms, err := c.Finder.VirtualMachineList(c, "*")
-	Expect(err).ToNot(HaveOccurred())
-	if len(vms) == 0 {
-		return nil
+
+	if vm.Spec.ResourcePolicyName != "" {
+		resPolicy := vmopv1.VirtualMachineSetResourcePolicy{}
+		ExpectWithOffset(1, c.Client.Get(c, client.ObjectKey{
+			Name:      vm.Spec.ResourcePolicyName,
+			Namespace: vm.Namespace,
+		}, &resPolicy)).To(Succeed())
+
+		parentFolder := object.NewFolder(c.VCClient.Client,
+			types.ManagedObjectReference{Type: "Folder", Value: folderMoId})
+
+		objRef, err := object.NewSearchIndex(parentFolder.Client()).FindChild(c, parentFolder.Reference(), resPolicy.Spec.Folder.Name)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		ExpectWithOffset(1, objRef).ToNot(BeNil())
+
+		folderMoId = objRef.Reference().Value
 	}
-	for _, tmp := range vms {
-		if tmp.Name() == vm.Name {
-			fmt.Println(tmp.InventoryPath)
-			fmt.Println(folder.InventoryPath)
-		}
-	}*/
-	objRef, err := c.Finder.ObjectReference(c, types.ManagedObjectReference{
+
+	folderRef, err := c.Finder.ObjectReference(c, types.ManagedObjectReference{
 		Type:  "Folder",
 		Value: folderMoId,
 	})
-	Expect(err).ToNot(HaveOccurred())
-	//folder = objRef.(*object.Folder)
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
-	vmRef, err := object.NewSearchIndex(c.VCClient.Client).FindChild(c, objRef, vm.Name)
+	vmRef, err := object.NewSearchIndex(c.VCClient.Client).FindChild(c, folderRef, vm.Name)
 	if err != nil || vmRef == nil {
 		return nil
 	}
 
 	return c.GetVMFromMoID(vmRef.Reference().Value)
-	/*
-		vcVM, ok := vmRef.(*object.VirtualMachine)
-		Expect(ok).To(BeTrue())
-		return vcVM*/
 }
 
 func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName, childName string) *object.ResourcePool {
