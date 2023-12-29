@@ -6,8 +6,6 @@ package v1alpha2
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 const (
@@ -306,7 +304,7 @@ type VirtualMachineDeploymentList struct {
 }
 
 func init() {
-	v1alpha1.SchemeBuilder.Register(
+	SchemeBuilder.Register(
 		&VirtualMachineDeployment{},
 		&VirtualMachineDeploymentList{},
 	)

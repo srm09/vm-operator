@@ -5,8 +5,6 @@ package v1alpha2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 const (
@@ -27,7 +25,7 @@ type VirtualMachineTemplateSpec struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec v1alpha1.VirtualMachineSpec `json:"spec,omitempty"`
+	Spec VirtualMachineSpec `json:"spec,omitempty"`
 }
 
 // VirtualMachineReplicaSetSpec is the specification of a
@@ -100,14 +98,14 @@ type VirtualMachineReplicaSetStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=type
-	Conditions []v1alpha1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-func (rs *VirtualMachineReplicaSet) GetConditions() v1alpha1.Conditions {
+func (rs *VirtualMachineReplicaSet) GetConditions() []metav1.Condition {
 	return rs.Status.Conditions
 }
 
-func (rs *VirtualMachineReplicaSet) SetConditions(conditions v1alpha1.Conditions) {
+func (rs *VirtualMachineReplicaSet) SetConditions(conditions []metav1.Condition) {
 	rs.Status.Conditions = conditions
 }
 
@@ -144,7 +142,7 @@ type VirtualMachineReplicaSetList struct {
 }
 
 func init() {
-	v1alpha1.SchemeBuilder.Register(
+	SchemeBuilder.Register(
 		&VirtualMachineReplicaSet{},
 		&VirtualMachineReplicaSetList{},
 	)
