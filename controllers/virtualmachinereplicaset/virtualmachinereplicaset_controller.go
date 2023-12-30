@@ -228,29 +228,6 @@ func (r *Reconciler) reconcile(ctx goctx.Context, machineSet *v1alpha2.VirtualMa
 		machineSet.Labels = make(map[string]string)
 	}
 
-	// TODO(muchhals): Might not be needed since we do envision stand alone machine replicasets.
-	// If the machine set is a stand alone one, meaning not originated from a MachineDeployment, then set it as directly
-	// owned by the Cluster (if not already present).
-	/*if r.shouldAdopt(machineSet) {
-		machineSet.OwnerReferences = util.EnsureOwnerRef(machineSet.OwnerReferences, metav1.OwnerReference{
-			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Cluster",
-			Name:       cluster.Name,
-			UID:        cluster.UID,
-		})
-	}*/
-
-	// Make sure to reconcile the external infrastructure reference.
-	/*if err := reconcileExternalTemplateReference(ctx, r.Client, r.APIReader, cluster, &machineSet.Spec.Template.Spec.InfrastructureRef); err != nil {
-		return ctrl.Result{}, err
-	}
-	// Make sure to reconcile the external bootstrap reference, if any.
-	if machineSet.Spec.Template.Spec.Bootstrap.ConfigRef != nil {
-		if err := reconcileExternalTemplateReference(ctx, r.Client, r.APIReader, cluster, machineSet.Spec.Template.Spec.Bootstrap.ConfigRef); err != nil {
-			return ctrl.Result{}, err
-		}
-	}*/
-
 	// Make sure selector and template to be in the same cluster.
 	if machineSet.Spec.Selector.MatchLabels == nil {
 		machineSet.Spec.Selector.MatchLabels = make(map[string]string)

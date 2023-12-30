@@ -191,27 +191,6 @@ func (r *Reconciler) reconcile(ctx goctx.Context, md *v1alpha2.VirtualMachineDep
 	log := ctrl.LoggerFrom(ctx)
 	log.V(4).Info("Reconcile MachineDeployment")
 
-	/*md.Labels[clusterv1.ClusterNameLabel] = md.Spec.ClusterName
-
-	// Ensure the MachineDeployment is owned by the Cluster.
-	md.SetOwnerReferences(util.EnsureOwnerRef(md.GetOwnerReferences(), metav1.OwnerReference{
-		APIVersion: clusterv1.GroupVersion.String(),
-		Kind:       "Cluster",
-		Name:       cluster.Name,
-		UID:        cluster.UID,
-	}))
-
-	// Make sure to reconcile the external infrastructure reference.
-	if err := reconcileExternalTemplateReference(ctx, r.Client, cluster, &md.Spec.Template.Spec.InfrastructureRef); err != nil {
-		return ctrl.Result{}, err
-	}
-	// Make sure to reconcile the external bootstrap reference, if any.
-	if md.Spec.Template.Spec.Bootstrap.ConfigRef != nil {
-		if err := reconcileExternalTemplateReference(ctx, r.Client, cluster, md.Spec.Template.Spec.Bootstrap.ConfigRef); err != nil {
-			return ctrl.Result{}, err
-		}
-	}*/
-
 	msList, err := r.getVirtualMachineReplicaSetsForDeployment(ctx, md)
 	if err != nil {
 		return err
