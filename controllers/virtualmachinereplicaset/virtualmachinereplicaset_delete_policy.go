@@ -6,8 +6,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
 type (
@@ -96,7 +95,7 @@ func getMachinesToDeletePrioritized(filteredMachines []*vmopv1.VirtualMachine, d
 }
 
 // TODO(muchhals): Needed when we add delete priority field
-func getDeletePriorityFunc(ms *v1alpha2.VirtualMachineReplicaSet) (deletePriorityFunc, error) {
+func getDeletePriorityFunc(ms *vmopv1.VirtualMachineReplicaSet) (deletePriorityFunc, error) {
 	return oldestDeletePriority, nil
 }
 

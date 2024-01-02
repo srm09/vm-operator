@@ -23,52 +23,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
-
-/*import (
-	"context"
-	"fmt"
-	"strings"
-	"time"
-
-	"github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	kerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/klog/v2"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/controllers/external"
-	"sigs.k8s.io/cluster-api/controllers/noderefutil"
-	"sigs.k8s.io/cluster-api/controllers/remote"
-	"sigs.k8s.io/cluster-api/internal/controllers/machine"
-	capilabels "sigs.k8s.io/cluster-api/internal/labels"
-	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/annotations"
-	"sigs.k8s.io/cluster-api/util/collections"
-	"sigs.k8s.io/cluster-api/util/conditions"
-	utilconversion "sigs.k8s.io/cluster-api/util/conversion"
-	clog "sigs.k8s.io/cluster-api/util/log"
-	"sigs.k8s.io/cluster-api/util/patch"
-	"sigs.k8s.io/cluster-api/util/predicates"
-)*/
 
 var (
 	// machineSetKind contains the schema.GroupVersionKind for the MachineSet type.
@@ -87,7 +49,7 @@ const finalizerName = "virtualmachinereplicaset.vmoperator.vmware.com"
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &v1alpha2.VirtualMachineReplicaSet{}
+		controlledType     = &vmopv1.VirtualMachineReplicaSet{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -103,10 +65,8 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		Owns(&vmopv1.VirtualMachine{}).
-		Watches(
-			&source.Kind{Type: &vmopv1.VirtualMachine{}},
-			handler.EnqueueRequestsFromMapFunc(r.MachineToMachineSets),
-		).
+		Watches(&vmopv1.VirtualMachine{},
+			handler.EnqueueRequestsFromMapFunc(MachineToMachineSetsMapperFunc(mgr.GetClient()))).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
 
 	return builder.Complete(r)
@@ -157,7 +117,7 @@ type Reconciler struct {
 }*/
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	machineSet := &v1alpha2.VirtualMachineReplicaSet{}
+	machineSet := &vmopv1.VirtualMachineReplicaSet{}
 	if err := r.Client.Get(ctx, req.NamespacedName, machineSet); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Object not found, return. Created objects are automatically garbage collected.
@@ -198,7 +158,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	return result, err
 }
 
-func patchMachineSet(ctx goctx.Context, patchHelper *patch.Helper, machineSet *v1alpha2.VirtualMachineReplicaSet, options ...patch.Option) error {
+func patchMachineSet(ctx goctx.Context, patchHelper *patch.Helper, machineSet *vmopv1.VirtualMachineReplicaSet, options ...patch.Option) error {
 	// Always update the readyCondition by summarizing the state of other conditions.
 	/*conditions.SetSummary(machineSet,
 		conditions.WithConditions(
@@ -220,7 +180,7 @@ func patchMachineSet(ctx goctx.Context, patchHelper *patch.Helper, machineSet *v
 	return patchHelper.Patch(ctx, machineSet, options...)
 }
 
-func (r *Reconciler) reconcile(ctx goctx.Context, machineSet *v1alpha2.VirtualMachineReplicaSet) (ctrl.Result, error) {
+func (r *Reconciler) reconcile(ctx goctx.Context, machineSet *vmopv1.VirtualMachineReplicaSet) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Reconcile and retrieve the Cluster object.
@@ -283,11 +243,11 @@ func (r *Reconciler) reconcile(ctx goctx.Context, machineSet *v1alpha2.VirtualMa
 	// which were created before the `cluster.x-k8s.io/set-name` label was added to
 	// all Machines created by a MachineSet or if a user manually removed the label.
 	for _, machine := range filteredMachines {
-		mdNameOnMachineSet, mdNameSetOnMachineSet := machineSet.Labels[v1alpha2.VirtualMachineDeploymentNameLabel]
-		mdNameOnMachine := machine.Labels[v1alpha2.VirtualMachineDeploymentNameLabel]
+		mdNameOnMachineSet, mdNameSetOnMachineSet := machineSet.Labels[vmopv1.VirtualMachineDeploymentNameLabel]
+		mdNameOnMachine := machine.Labels[vmopv1.VirtualMachineDeploymentNameLabel]
 
 		// Note: MustEqualValue is used here as the value of this label will be a hash if the MachineSet name is longer than 63 characters.
-		if msNameLabelValue, ok := machine.Labels[v1alpha2.VirtualMachineReplicaSetNameLabel]; ok && MustEqualValue(machineSet.Name, msNameLabelValue) &&
+		if msNameLabelValue, ok := machine.Labels[vmopv1.VirtualMachineReplicaSetNameLabel]; ok && MustEqualValue(machineSet.Name, msNameLabelValue) &&
 			(!mdNameSetOnMachineSet || mdNameOnMachineSet == mdNameOnMachine) {
 			// Continue if the MachineSet name label is already set correctly and
 			// either the MachineDeployment name label is not set on the MachineSet or
@@ -297,16 +257,16 @@ func (r *Reconciler) reconcile(ctx goctx.Context, machineSet *v1alpha2.VirtualMa
 
 		helper, err := patch.NewHelper(machine, r.Client)
 		if err != nil {
-			return ctrl.Result{}, errors.Wrapf(err, "failed to apply %s label to Machine %q", v1alpha2.VirtualMachineReplicaSetNameLabel, machine.Name)
+			return ctrl.Result{}, errors.Wrapf(err, "failed to apply %s label to Machine %q", vmopv1.VirtualMachineReplicaSetNameLabel, machine.Name)
 		}
 		// Note: MustFormatValue is used here as the value of this label will be a hash if the MachineSet name is longer than 63 characters.
-		machine.Labels[v1alpha2.VirtualMachineReplicaSetNameLabel] = MustFormatValue(machineSet.Name)
+		machine.Labels[vmopv1.VirtualMachineReplicaSetNameLabel] = MustFormatValue(machineSet.Name)
 		// Propagate the MachineDeploymentLabelName from MachineSet to Machine if it is set on the MachineSet.
 		if mdNameSetOnMachineSet {
-			machine.Labels[v1alpha2.VirtualMachineDeploymentNameLabel] = mdNameOnMachineSet
+			machine.Labels[vmopv1.VirtualMachineDeploymentNameLabel] = mdNameOnMachineSet
 		}
 		if err := helper.Patch(ctx, machine); err != nil {
-			return ctrl.Result{}, errors.Wrapf(err, "failed to apply %s label to Machine %q", v1alpha2.VirtualMachineReplicaSetNameLabel, machine.Name)
+			return ctrl.Result{}, errors.Wrapf(err, "failed to apply %s label to Machine %q", vmopv1.VirtualMachineReplicaSetNameLabel, machine.Name)
 		}
 	}
 
@@ -377,7 +337,7 @@ func (r *Reconciler) reconcile(ctx goctx.Context, machineSet *v1alpha2.VirtualMa
 }
 
 // syncReplicas scales Machine resources up or down.
-func (r *Reconciler) syncReplicas(ctx goctx.Context, ms *v1alpha2.VirtualMachineReplicaSet, machines []*vmopv1.VirtualMachine) error {
+func (r *Reconciler) syncReplicas(ctx goctx.Context, ms *vmopv1.VirtualMachineReplicaSet, machines []*vmopv1.VirtualMachine) error {
 	log := ctrl.LoggerFrom(ctx)
 	if ms.Spec.Replicas == nil {
 		return errors.Errorf("the Replicas field in Spec for machineset %v is nil, this should not be allowed", ms.Name)
@@ -402,7 +362,7 @@ func (r *Reconciler) syncReplicas(ctx goctx.Context, ms *v1alpha2.VirtualMachine
 				r.recorder.Eventf(ms, corev1.EventTypeWarning, "FailedCreate", "Failed to create machine: %v", err)
 				errs = append(errs, err)
 				conditions.MarkFalse(ms, vmopv1.MachinesCreatedCondition, vmopv1.MachineCreationFailedReason,
-					vmopv1.ConditionSeverityError, err.Error())
+					err.Error())
 				continue
 			}
 
@@ -452,7 +412,7 @@ func (r *Reconciler) syncReplicas(ctx goctx.Context, ms *v1alpha2.VirtualMachine
 
 // getNewMachine creates a new Machine object. The name of the newly created resource is going
 // to be created by the API server, we set the generateName field.
-func (r *Reconciler) getNewMachine(machineSet *v1alpha2.VirtualMachineReplicaSet) *vmopv1.VirtualMachine {
+func (r *Reconciler) getNewMachine(machineSet *vmopv1.VirtualMachineReplicaSet) *vmopv1.VirtualMachine {
 	gv := vmopv1.SchemeGroupVersion
 	machine := &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
@@ -481,17 +441,17 @@ func (r *Reconciler) getNewMachine(machineSet *v1alpha2.VirtualMachineReplicaSet
 
 	// Enforce that the MachineSetLabelName label is set
 	// Note: the MachineSetLabelName is added by the default webhook to MachineSet.spec.template.labels if a spec.selector is empty.
-	machine.Labels[v1alpha2.VirtualMachineReplicaSetNameLabel] = MustFormatValue(machineSet.Name)
+	machine.Labels[vmopv1.VirtualMachineReplicaSetNameLabel] = MustFormatValue(machineSet.Name)
 	// Propagate the MachineDeploymentNameLabel from MachineSet to Machine if it exists.
-	if mdName, ok := machineSet.Labels[v1alpha2.VirtualMachineDeploymentNameLabel]; ok {
-		machine.Labels[v1alpha2.VirtualMachineDeploymentNameLabel] = mdName
+	if mdName, ok := machineSet.Labels[vmopv1.VirtualMachineDeploymentNameLabel]; ok {
+		machine.Labels[vmopv1.VirtualMachineDeploymentNameLabel] = mdName
 	}
 
 	return machine
 }
 
 // shouldExcludeMachine returns true if the machine should be filtered out, false otherwise.
-func shouldExcludeMachine(machineSet *v1alpha2.VirtualMachineReplicaSet, machine *vmopv1.VirtualMachine) bool {
+func shouldExcludeMachine(machineSet *vmopv1.VirtualMachineReplicaSet, machine *vmopv1.VirtualMachine) bool {
 	if metav1.GetControllerOf(machine) != nil && !metav1.IsControlledBy(machine, machineSet) {
 		return true
 	}
@@ -500,7 +460,7 @@ func shouldExcludeMachine(machineSet *v1alpha2.VirtualMachineReplicaSet, machine
 }
 
 // adoptOrphan sets the MachineSet as a controller OwnerReference to the Machine.
-func (r *Reconciler) adoptOrphan(ctx goctx.Context, machineSet *v1alpha2.VirtualMachineReplicaSet, machine *vmopv1.VirtualMachine) error {
+func (r *Reconciler) adoptOrphan(ctx goctx.Context, machineSet *vmopv1.VirtualMachineReplicaSet, machine *vmopv1.VirtualMachine) error {
 	patch := client.MergeFrom(machine.DeepCopy())
 	newRef := *metav1.NewControllerRef(machineSet, machineSetKind)
 	machine.OwnerReferences = append(machine.OwnerReferences, newRef)
@@ -556,9 +516,49 @@ func (r *Reconciler) waitForMachineDeletion(ctx goctx.Context, machineList []*vm
 	return nil
 }
 
-// MachineToMachineSets is a handler.ToRequestsFunc to be used to enqueue requests for reconciliation
+// MachineToMachineSetsMapperFunc is a handler.ToRequestsFunc to be used to enqueue requests for reconciliation
 // for MachineSets that might adopt an orphaned Machine.
-func (r *Reconciler) MachineToMachineSets(o client.Object) []ctrl.Request {
+//
+//	func(context.Context, client.Object) []reconcile.Request
+func MachineToMachineSetsMapperFunc(c client.Client) func(goctx.Context, client.Object) []reconcile.Request {
+	return func(ctx goctx.Context, o client.Object) []reconcile.Request {
+		result := []reconcile.Request{}
+
+		m, ok := o.(*vmopv1.VirtualMachine)
+		if !ok {
+			panic(fmt.Sprintf("Expected a Machine but got a %T", o))
+		}
+
+		// This won't log unless the global logger is set
+		log := ctrl.LoggerFrom(ctx, "Machine", klog.KObj(m))
+
+		// Check if the controller reference is already set and
+		// return an empty result when one is found.
+		for _, ref := range m.ObjectMeta.OwnerReferences {
+			if ref.Controller != nil && *ref.Controller {
+				return result
+			}
+		}
+
+		mss, err := getMachineSetsForMachine(ctx, c, m)
+		if err != nil {
+			log.Error(err, "Failed getting MachineSets for Machine")
+			return nil
+		}
+		if len(mss) == 0 {
+			return nil
+		}
+
+		for _, ms := range mss {
+			name := client.ObjectKey{Namespace: ms.Namespace, Name: ms.Name}
+			result = append(result, reconcile.Request{NamespacedName: name})
+		}
+
+		return result
+	}
+}
+
+/*func (r *Reconciler) MachineToMachineSets(o client.Object) []ctrl.Request {
 	result := []ctrl.Request{}
 
 	m, ok := o.(*vmopv1.VirtualMachine)
@@ -593,19 +593,19 @@ func (r *Reconciler) MachineToMachineSets(o client.Object) []ctrl.Request {
 	}
 
 	return result
-}
+}*/
 
-func (r *Reconciler) getMachineSetsForMachine(ctx goctx.Context, m *vmopv1.VirtualMachine) ([]*v1alpha2.VirtualMachineReplicaSet, error) {
+func getMachineSetsForMachine(ctx goctx.Context, c client.Client, m *vmopv1.VirtualMachine) ([]*vmopv1.VirtualMachineReplicaSet, error) {
 	if len(m.Labels) == 0 {
 		return nil, fmt.Errorf("machine %v has no labels, this is unexpected", client.ObjectKeyFromObject(m))
 	}
 
-	msList := &v1alpha2.VirtualMachineReplicaSetList{}
-	if err := r.Client.List(ctx, msList, client.InNamespace(m.Namespace)); err != nil {
+	msList := &vmopv1.VirtualMachineReplicaSetList{}
+	if err := c.List(ctx, msList, client.InNamespace(m.Namespace)); err != nil {
 		return nil, errors.Wrapf(err, "failed to list MachineSets")
 	}
 
-	var mss []*v1alpha2.VirtualMachineReplicaSet
+	var mss []*vmopv1.VirtualMachineReplicaSet
 	for idx := range msList.Items {
 		ms := &msList.Items[idx]
 		if HasMatchingLabels(*ms.Spec.Selector, m.Labels) {
@@ -634,7 +634,7 @@ func (r *Reconciler) getMachineSetsForMachine(ctx goctx.Context, m *vmopv1.Virtu
 
 // updateStatus updates the Status field for the MachineSet
 // It checks for the current state of the replicas and updates the Status of the MachineSet.
-func (r *Reconciler) updateStatus(ctx goctx.Context, ms *v1alpha2.VirtualMachineReplicaSet, filteredMachines []*vmopv1.VirtualMachine) error {
+func (r *Reconciler) updateStatus(ctx goctx.Context, ms *vmopv1.VirtualMachineReplicaSet, filteredMachines []*vmopv1.VirtualMachine) error {
 	log := ctrl.LoggerFrom(ctx)
 	newStatus := ms.Status.DeepCopy()
 
@@ -715,10 +715,10 @@ func (r *Reconciler) updateStatus(ctx goctx.Context, ms *v1alpha2.VirtualMachine
 	switch {
 	// We are scaling up
 	case newStatus.Replicas < desiredReplicas:
-		conditions.MarkFalse(ms, vmopv1.ResizedCondition, vmopv1.ScalingUpReason, vmopv1.ConditionSeverityWarning, "Scaling up MachineSet to %d replicas (actual %d)", desiredReplicas, newStatus.Replicas)
+		conditions.MarkFalse(ms, vmopv1.ResizedCondition, vmopv1.ScalingUpReason, "Scaling up MachineSet to %d replicas (actual %d)", desiredReplicas, newStatus.Replicas)
 	// We are scaling down
 	case newStatus.Replicas > desiredReplicas:
-		conditions.MarkFalse(ms, vmopv1.ResizedCondition, vmopv1.ScalingDownReason, vmopv1.ConditionSeverityWarning, "Scaling down MachineSet to %d replicas (actual %d)", desiredReplicas, newStatus.Replicas)
+		conditions.MarkFalse(ms, vmopv1.ResizedCondition, vmopv1.ScalingDownReason, "Scaling down MachineSet to %d replicas (actual %d)", desiredReplicas, newStatus.Replicas)
 		// This means that there was no error in generating the desired number of machine objects
 		conditions.MarkTrue(ms, vmopv1.MachinesCreatedCondition)
 	default:

@@ -9,13 +9,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // rolloutRolling implements the logic for rolling a new MachineSet.
-func (r *Reconciler) rolloutRolling(ctx context.Context, md *v1alpha2.VirtualMachineDeployment, msList []*v1alpha2.VirtualMachineReplicaSet) error {
+func (r *Reconciler) rolloutRolling(ctx context.Context, md *vmopv1.VirtualMachineDeployment, msList []*vmopv1.VirtualMachineReplicaSet) error {
 	newMS, oldMSs, err := r.getAllMachineSetsAndSyncRevision(ctx, md, msList, true)
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ func (r *Reconciler) rolloutRolling(ctx context.Context, md *v1alpha2.VirtualMac
 	return nil
 }
 
-func (r *Reconciler) reconcileNewMachineSet(ctx context.Context, allMSs []*v1alpha2.VirtualMachineReplicaSet, newMS *v1alpha2.VirtualMachineReplicaSet, deployment *v1alpha2.VirtualMachineDeployment) error {
+func (r *Reconciler) reconcileNewMachineSet(ctx context.Context, allMSs []*vmopv1.VirtualMachineReplicaSet, newMS *vmopv1.VirtualMachineReplicaSet, deployment *vmopv1.VirtualMachineDeployment) error {
 	if deployment.Spec.Replicas == nil {
 		return errors.Errorf("spec.replicas for MachineDeployment %v is nil, this is unexpected", client.ObjectKeyFromObject(deployment))
 	}
@@ -84,7 +84,7 @@ func (r *Reconciler) reconcileNewMachineSet(ctx context.Context, allMSs []*v1alp
 	return r.scaleMachineSet(ctx, newMS, newReplicasCount, deployment)
 }
 
-func (r *Reconciler) reconcileOldMachineSets(ctx context.Context, allMSs []*v1alpha2.VirtualMachineReplicaSet, oldMSs []*v1alpha2.VirtualMachineReplicaSet, newMS *v1alpha2.VirtualMachineReplicaSet, deployment *v1alpha2.VirtualMachineDeployment) error {
+func (r *Reconciler) reconcileOldMachineSets(ctx context.Context, allMSs []*vmopv1.VirtualMachineReplicaSet, oldMSs []*vmopv1.VirtualMachineReplicaSet, newMS *vmopv1.VirtualMachineReplicaSet, deployment *vmopv1.VirtualMachineDeployment) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	if deployment.Spec.Replicas == nil {
@@ -167,7 +167,7 @@ func (r *Reconciler) reconcileOldMachineSets(ctx context.Context, allMSs []*v1al
 }
 
 // cleanupUnhealthyReplicas will scale down old MachineSets with unhealthy replicas, so that all unhealthy replicas will be deleted.
-func (r *Reconciler) cleanupUnhealthyReplicas(ctx context.Context, oldMSs []*v1alpha2.VirtualMachineReplicaSet, deployment *v1alpha2.VirtualMachineDeployment, maxCleanupCount int32) ([]*v1alpha2.VirtualMachineReplicaSet, int32, error) {
+func (r *Reconciler) cleanupUnhealthyReplicas(ctx context.Context, oldMSs []*vmopv1.VirtualMachineReplicaSet, deployment *vmopv1.VirtualMachineDeployment, maxCleanupCount int32) ([]*vmopv1.VirtualMachineReplicaSet, int32, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	sort.Sort(util.MachineSetsByCreationTimestamp(oldMSs))
@@ -223,7 +223,7 @@ func (r *Reconciler) cleanupUnhealthyReplicas(ctx context.Context, oldMSs []*v1a
 
 // scaleDownOldMachineSetsForRollingUpdate scales down old MachineSets when deployment strategy is "RollingUpdate".
 // Need check maxUnavailable to ensure availability.
-func (r *Reconciler) scaleDownOldMachineSetsForRollingUpdate(ctx context.Context, allMSs []*v1alpha2.VirtualMachineReplicaSet, oldMSs []*v1alpha2.VirtualMachineReplicaSet, deployment *v1alpha2.VirtualMachineDeployment) (int32, error) {
+func (r *Reconciler) scaleDownOldMachineSetsForRollingUpdate(ctx context.Context, allMSs []*vmopv1.VirtualMachineReplicaSet, oldMSs []*vmopv1.VirtualMachineReplicaSet, deployment *vmopv1.VirtualMachineDeployment) (int32, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	if deployment.Spec.Replicas == nil {

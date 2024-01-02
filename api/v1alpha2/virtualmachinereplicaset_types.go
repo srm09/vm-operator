@@ -16,6 +16,29 @@ const (
 )
 
 const (
+	// MachinesCreatedCondition documents that the machines controlled by the MachineSet are created.
+	// When this condition is false, it indicates that there was an error when cloning the infrastructure/bootstrap template or
+	// when generating the machine object.
+	MachinesCreatedCondition = "MachinesCreated"
+
+	// MachinesReadyCondition reports an aggregate of current status of the machines controlled by the MachineSet.
+	MachinesReadyCondition = "MachinesReady"
+
+	// MachineCreationFailedReason (Severity=Error) documents a MachineSet failing to
+	// generate a machine object.
+	MachineCreationFailedReason = "MachineCreationFailed"
+
+	// ResizedCondition documents a MachineSet is resizing the set of controlled machines.
+	ResizedCondition = "Resized"
+
+	// ScalingUpReason (Severity=Info) documents a MachineSet is increasing the number of replicas.
+	ScalingUpReason = "ScalingUp"
+
+	// ScalingDownReason (Severity=Info) documents a MachineSet is decreasing the number of replicas.
+	ScalingDownReason = "ScalingDown"
+)
+
+const (
 	VirtualMachineReplicaSetNameLabel = "vmoperator.vmware.com/replicaset-name"
 )
 

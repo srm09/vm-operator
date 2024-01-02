@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -30,7 +30,7 @@ const finalizerName = "virtualmachinedeployment.vmoperator.vmware.com"
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &v1alpha2.VirtualMachineDeployment{}
+		controlledType     = &vmopv1.VirtualMachineDeployment{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -45,7 +45,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
-		Owns(&v1alpha2.VirtualMachineReplicaSet{}).
+		Owns(&vmopv1.VirtualMachineReplicaSet{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
 
 	return builder.Complete(r)
@@ -76,7 +76,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinereplicasets/status,verbs=get;patch;update;
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
-	vmDeployment := &v1alpha2.VirtualMachineDeployment{}
+	vmDeployment := &vmopv1.VirtualMachineDeployment{}
 	if err := r.Get(ctx, request.NamespacedName, vmDeployment); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -121,7 +121,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineDeploymentContex
 
 	ctx.Logger.Info("Reconciling VirtualMachineDeployment")
 	vmDeploymentObj := ctx.Value("vmop-object")
-	vmDeployment, _ := vmDeploymentObj.(*v1alpha2.VirtualMachineDeployment)
+	vmDeployment, _ := vmDeploymentObj.(*vmopv1.VirtualMachineDeployment)
 	return r.reconcile(ctx, vmDeployment)
 }
 
@@ -187,7 +187,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineDeploymentContex
 		return result, err
 	}
 */
-func (r *Reconciler) reconcile(ctx goctx.Context, md *v1alpha2.VirtualMachineDeployment) error {
+func (r *Reconciler) reconcile(ctx goctx.Context, md *vmopv1.VirtualMachineDeployment) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.V(4).Info("Reconcile MachineDeployment")
 
@@ -200,17 +200,17 @@ func (r *Reconciler) reconcile(ctx goctx.Context, md *v1alpha2.VirtualMachineDep
 	// Ensure all required labels exist on the controlled MachineSets.
 	for idx := range msList {
 		machineSet := msList[idx]
-		if name, ok := machineSet.Labels[v1alpha2.VirtualMachineDeploymentNameLabel]; ok && name == md.Name {
+		if name, ok := machineSet.Labels[vmopv1.VirtualMachineDeploymentNameLabel]; ok && name == md.Name {
 			continue
 		}
 
 		helper, err := patch.NewHelper(machineSet, r.Client)
 		if err != nil {
-			return errors.Wrapf(err, "failed to apply %s label to MachineSet %q", v1alpha2.VirtualMachineDeploymentNameLabel, machineSet.Name)
+			return errors.Wrapf(err, "failed to apply %s label to MachineSet %q", vmopv1.VirtualMachineDeploymentNameLabel, machineSet.Name)
 		}
-		machineSet.Labels[v1alpha2.VirtualMachineDeploymentNameLabel] = md.Name
+		machineSet.Labels[vmopv1.VirtualMachineDeploymentNameLabel] = md.Name
 		if err := helper.Patch(ctx, machineSet); err != nil {
-			return errors.Wrapf(err, "failed to apply %s label to MachineSet %q", v1alpha2.VirtualMachineDeploymentNameLabel, machineSet.Name)
+			return errors.Wrapf(err, "failed to apply %s label to MachineSet %q", vmopv1.VirtualMachineDeploymentNameLabel, machineSet.Name)
 		}
 	}
 
@@ -235,7 +235,7 @@ func (r *Reconciler) reconcile(ctx goctx.Context, md *v1alpha2.VirtualMachineDep
 		return ctrl.Result{}, errors.Errorf("missing MachineDeployment strategy")
 	}*/
 
-	if md.Spec.Strategy.Type == v1alpha2.VirtualMachineDeploymentStrategyTypeRollingUpdate {
+	if md.Spec.Strategy.Type == vmopv1.VirtualMachineDeploymentStrategyTypeRollingUpdate {
 		if md.Spec.Strategy.RollingUpdate == nil {
 			return errors.Errorf("missing MachineDeployment settings for strategy type: %s", md.Spec.Strategy.Type)
 		}
@@ -251,16 +251,16 @@ func (r *Reconciler) reconcile(ctx goctx.Context, md *v1alpha2.VirtualMachineDep
 }
 
 // getVirtualMachineReplicaSetsForDeployment returns a list of MachineSets associated with a MachineDeployment.
-func (r *Reconciler) getVirtualMachineReplicaSetsForDeployment(ctx goctx.Context, md *v1alpha2.VirtualMachineDeployment) ([]*v1alpha2.VirtualMachineReplicaSet, error) {
+func (r *Reconciler) getVirtualMachineReplicaSetsForDeployment(ctx goctx.Context, md *vmopv1.VirtualMachineDeployment) ([]*vmopv1.VirtualMachineReplicaSet, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// List all VirtualMachineReplicaSets to find those we own but that no longer match our selector.
-	replicaSetsList := &v1alpha2.VirtualMachineReplicaSetList{}
+	replicaSetsList := &vmopv1.VirtualMachineReplicaSetList{}
 	if err := r.Client.List(ctx, replicaSetsList, client.InNamespace(md.Namespace)); err != nil {
 		return nil, err
 	}
 
-	filtered := make([]*v1alpha2.VirtualMachineReplicaSet, 0, len(replicaSetsList.Items))
+	filtered := make([]*vmopv1.VirtualMachineReplicaSet, 0, len(replicaSetsList.Items))
 	for idx := range replicaSetsList.Items {
 		rs := &replicaSetsList.Items[idx]
 		log.WithValues("VirtualMachineReplicaSet", klog.KObj(rs))
@@ -305,7 +305,7 @@ func (r *Reconciler) getVirtualMachineReplicaSetsForDeployment(ctx goctx.Context
 }
 
 // adoptOrphan sets the MachineDeployment as a controller OwnerReference to the MachineSet.
-func (r *Reconciler) adoptOrphan(ctx goctx.Context, deployment *v1alpha2.VirtualMachineDeployment, replicaSet *v1alpha2.VirtualMachineReplicaSet) error {
+func (r *Reconciler) adoptOrphan(ctx goctx.Context, deployment *vmopv1.VirtualMachineDeployment, replicaSet *vmopv1.VirtualMachineReplicaSet) error {
 	patch := client.MergeFrom(replicaSet.DeepCopy())
 	// TODO(muchhals): Does Re-setting the same owner reference work?
 	if err := controllerutil.SetControllerReference(deployment, replicaSet, r.Client.Scheme()); err != nil {

@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -26,7 +26,7 @@ import (
 
 // sync is responsible for reconciling deployments on scaling events or when they
 // are paused.
-func (r *Reconciler) sync(ctx context.Context, d *v1alpha2.VirtualMachineDeployment, msList []*v1alpha2.VirtualMachineReplicaSet) error {
+func (r *Reconciler) sync(ctx context.Context, d *vmopv1.VirtualMachineDeployment, msList []*vmopv1.VirtualMachineReplicaSet) error {
 	newMS, oldMSs, err := r.getAllMachineSetsAndSyncRevision(ctx, d, msList, false)
 	if err != nil {
 		return err
@@ -58,7 +58,7 @@ func (r *Reconciler) sync(ctx context.Context, d *v1alpha2.VirtualMachineDeploym
 //
 // Note that currently the deployment controller is using caches to avoid querying the server for reads.
 // This may lead to stale reads of machine sets, thus incorrect deployment status.
-func (r *Reconciler) getAllMachineSetsAndSyncRevision(ctx context.Context, d *v1alpha2.VirtualMachineDeployment, msList []*v1alpha2.VirtualMachineReplicaSet, createIfNotExisted bool) (*v1alpha2.VirtualMachineReplicaSet, []*v1alpha2.VirtualMachineReplicaSet, error) {
+func (r *Reconciler) getAllMachineSetsAndSyncRevision(ctx context.Context, d *vmopv1.VirtualMachineDeployment, msList []*vmopv1.VirtualMachineReplicaSet, createIfNotExisted bool) (*vmopv1.VirtualMachineReplicaSet, []*vmopv1.VirtualMachineReplicaSet, error) {
 	r.logger.Info("finding old machine sets from ms list", "list size", len(msList))
 	_, allOldMSs := util.FindOldMachineSets(d, msList)
 	r.logger.Info("found old machine sets from ms list", "found size", len(allOldMSs))
@@ -79,7 +79,7 @@ func (r *Reconciler) getAllMachineSetsAndSyncRevision(ctx context.Context, d *v1
 // 2. If there's existing new MS, update its revision number if it's smaller than (maxOldRevision + 1), where maxOldRevision is the max revision number among all old MSes.
 // 3. If there's no existing new MS and createIfNotExisted is true, create one with appropriate revision number (maxOldRevision + 1) and replicas.
 // Note that the machine-template-hash will be added to adopted MSes and machines.
-func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMachineDeployment, msList, oldMSs []*v1alpha2.VirtualMachineReplicaSet, createIfNotExisted bool) (*v1alpha2.VirtualMachineReplicaSet, error) {
+func (r *Reconciler) getNewMachineSet(ctx context.Context, d *vmopv1.VirtualMachineDeployment, msList, oldMSs []*vmopv1.VirtualMachineReplicaSet, createIfNotExisted bool) (*vmopv1.VirtualMachineReplicaSet, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	existingNewMS := util.FindNewMachineSet(d, msList)
@@ -120,8 +120,8 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 		}
 
 		// Apply revision annotation from existingNewMS if it is missing from the deployment.
-		err = r.updateMachineDeployment(ctx, d, func(innerDeployment *v1alpha2.VirtualMachineDeployment) {
-			util.SetDeploymentRevision(d, msCopy.Annotations[v1alpha2.RevisionAnnotation])
+		err = r.updateMachineDeployment(ctx, d, func(innerDeployment *vmopv1.VirtualMachineDeployment) {
+			util.SetDeploymentRevision(d, msCopy.Annotations[vmopv1.RevisionAnnotation])
 		})
 		return msCopy, err
 	}
@@ -139,18 +139,18 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 	machineTemplateSpecHash := fmt.Sprintf("%d", hash)
 
 	r.logger.Info("SAGAR => adding label to the template spec",
-		"label name", v1alpha2.VirtualMachineDeploymentUniqueLabel,
+		"label name", vmopv1.VirtualMachineDeploymentUniqueLabel,
 		"label value", machineTemplateSpecHash)
 	newMSTemplate.Labels = util.CloneAndAddLabel(d.Spec.Template.Labels,
-		v1alpha2.VirtualMachineDeploymentUniqueLabel, machineTemplateSpecHash)
+		vmopv1.VirtualMachineDeploymentUniqueLabel, machineTemplateSpecHash)
 	r.logger.Info("SAGAR => added label to the template spec",
-		"label name", v1alpha2.VirtualMachineDeploymentUniqueLabel,
+		"label name", vmopv1.VirtualMachineDeploymentUniqueLabel,
 		"label value", machineTemplateSpecHash,
 		"labels length", len(newMSTemplate.Labels))
 
 	// Add machineTemplateHash label to selector.
 	newMSSelector := util.CloneSelectorAndAddLabel(d.Spec.Selector,
-		v1alpha2.VirtualMachineDeploymentUniqueLabel, machineTemplateSpecHash)
+		vmopv1.VirtualMachineDeploymentUniqueLabel, machineTemplateSpecHash)
 
 	minReadySeconds := int32(0)
 	if d.Spec.MinReadySeconds != 0 {
@@ -158,7 +158,7 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 	}
 
 	// Create new MachineSet
-	newMS := v1alpha2.VirtualMachineReplicaSet{
+	newMS := vmopv1.VirtualMachineReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
 			// Make the name deterministic, to ensure idempotence
 			Name:      d.Name + "-" + apirand.SafeEncodeString(machineTemplateSpecHash),
@@ -167,7 +167,7 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 			// Note: by setting the ownerRef on creation we signal to the MachineSet controller that this is not a stand-alone MachineSet.
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(d, d.GroupVersionKind())},
 		},
-		Spec: v1alpha2.VirtualMachineReplicaSetSpec{
+		Spec: vmopv1.VirtualMachineReplicaSetSpec{
 			Replicas:        new(int32),
 			MinReadySeconds: minReadySeconds,
 			Selector:        newMSSelector,
@@ -185,7 +185,7 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 
 	// Enforce that the MachineDeploymentLabelName label is set
 	// Note: the MachineDeploymentLabelName is added by the default webhook to MachineDeployment.spec.template.labels if spec.selector is empty.
-	newMS.Labels[v1alpha2.VirtualMachineDeploymentNameLabel] = d.Name
+	newMS.Labels[vmopv1.VirtualMachineDeploymentNameLabel] = d.Name
 
 	/*if d.Spec.Strategy.RollingUpdate.DeletePolicy != nil {
 		newMS.Spec.DeletePolicy = *d.Spec.Strategy.RollingUpdate.DeletePolicy
@@ -217,7 +217,7 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 	case apierrors.IsAlreadyExists(err):
 		alreadyExists = true
 
-		ms := &v1alpha2.VirtualMachineReplicaSet{}
+		ms := &vmopv1.VirtualMachineReplicaSet{}
 		msErr := r.Client.Get(ctx, client.ObjectKey{Namespace: newMS.Namespace, Name: newMS.Name}, ms)
 		if msErr != nil {
 			return nil, msErr
@@ -245,7 +245,7 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 		r.recorder.Eventf(d, corev1.EventTypeNormal, "SuccessfulCreate", "Created MachineSet %q", newMS.Name)
 	}
 
-	err = r.updateMachineDeployment(ctx, d, func(innerDeployment *v1alpha2.VirtualMachineDeployment) {
+	err = r.updateMachineDeployment(ctx, d, func(innerDeployment *vmopv1.VirtualMachineDeployment) {
 		util.SetDeploymentRevision(d, newRevision)
 	})
 
@@ -257,7 +257,7 @@ func (r *Reconciler) getNewMachineSet(ctx context.Context, d *v1alpha2.VirtualMa
 // have the effect of hastening the rollout progress, which could produce a higher proportion of unavailable
 // replicas in the event of a problem with the rolled out template. Should run only on scaling events or
 // when a deployment is paused and not during the normal rollout process.
-func (r *Reconciler) scale(ctx context.Context, deployment *v1alpha2.VirtualMachineDeployment, newMS *v1alpha2.VirtualMachineReplicaSet, oldMSs []*v1alpha2.VirtualMachineReplicaSet) error {
+func (r *Reconciler) scale(ctx context.Context, deployment *vmopv1.VirtualMachineDeployment, newMS *vmopv1.VirtualMachineReplicaSet, oldMSs []*vmopv1.VirtualMachineReplicaSet) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	if deployment.Spec.Replicas == nil {
@@ -366,7 +366,7 @@ func (r *Reconciler) scale(ctx context.Context, deployment *v1alpha2.VirtualMach
 }
 
 // syncDeploymentStatus checks if the status is up-to-date and sync it if necessary.
-func (r *Reconciler) syncDeploymentStatus(allMSs []*v1alpha2.VirtualMachineReplicaSet, newMS *v1alpha2.VirtualMachineReplicaSet, d *v1alpha2.VirtualMachineDeployment) error {
+func (r *Reconciler) syncDeploymentStatus(allMSs []*vmopv1.VirtualMachineReplicaSet, newMS *vmopv1.VirtualMachineReplicaSet, d *vmopv1.VirtualMachineDeployment) error {
 	d.Status = calculateStatus(allMSs, newMS, d)
 
 	// minReplicasNeeded will be equal to d.Spec.Replicas when the strategy is not RollingUpdateMachineDeploymentStrategyType.
@@ -384,7 +384,7 @@ func (r *Reconciler) syncDeploymentStatus(allMSs []*v1alpha2.VirtualMachineRepli
 }
 
 // calculateStatus calculates the latest status for the provided deployment by looking into the provided MachineSets.
-func calculateStatus(allMSs []*v1alpha2.VirtualMachineReplicaSet, newMS *v1alpha2.VirtualMachineReplicaSet, deployment *v1alpha2.VirtualMachineDeployment) v1alpha2.VirtualMachineDeploymentStatus {
+func calculateStatus(allMSs []*vmopv1.VirtualMachineReplicaSet, newMS *vmopv1.VirtualMachineReplicaSet, deployment *vmopv1.VirtualMachineDeployment) vmopv1.VirtualMachineDeploymentStatus {
 	availableReplicas := util.GetAvailableReplicaCountForMachineSets(allMSs)
 	totalReplicas := util.GetReplicaCountForMachineSets(allMSs)
 	unavailableReplicas := totalReplicas - availableReplicas
@@ -398,12 +398,12 @@ func calculateStatus(allMSs []*v1alpha2.VirtualMachineReplicaSet, newMS *v1alpha
 	// Calculate the label selector. We check the error in the MD reconcile function, ignore here.
 	//selector, _ := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
 
-	status := v1alpha2.VirtualMachineDeploymentStatus{
+	status := vmopv1.VirtualMachineDeploymentStatus{
 		// TODO: Ensure that if we start retrying status updates, we won't pick up a new Generation value.
 		ObservedGeneration: deployment.Generation,
 		//Selector:            selector.String(),
 		Replicas:            util.GetActualReplicaCountForMachineSets(allMSs),
-		UpdatedReplicas:     util.GetActualReplicaCountForMachineSets([]*v1alpha2.VirtualMachineReplicaSet{newMS}),
+		UpdatedReplicas:     util.GetActualReplicaCountForMachineSets([]*vmopv1.VirtualMachineReplicaSet{newMS}),
 		ReadyReplicas:       util.GetReadyReplicaCountForMachineSets(allMSs),
 		AvailableReplicas:   availableReplicas,
 		UnavailableReplicas: unavailableReplicas,
@@ -432,7 +432,7 @@ func calculateStatus(allMSs []*v1alpha2.VirtualMachineReplicaSet, newMS *v1alpha
 	return status
 }
 
-func (r *Reconciler) scaleMachineSet(ctx context.Context, ms *v1alpha2.VirtualMachineReplicaSet, newScale int32, deployment *v1alpha2.VirtualMachineDeployment) error {
+func (r *Reconciler) scaleMachineSet(ctx context.Context, ms *vmopv1.VirtualMachineReplicaSet, newScale int32, deployment *vmopv1.VirtualMachineDeployment) error {
 	if ms.Spec.Replicas == nil {
 		return errors.Errorf("spec.replicas for MachineSet %v is nil, this is unexpected", client.ObjectKeyFromObject(ms))
 	}
@@ -480,7 +480,7 @@ func (r *Reconciler) scaleMachineSet(ctx context.Context, ms *v1alpha2.VirtualMa
 // cleanupDeployment is responsible for cleaning up a deployment i.e. retains all but the latest N old machine sets
 // where N=d.Spec.RevisionHistoryLimit. Old machine sets are older versions of the machinetemplate of a deployment kept
 // around by default 1) for historical reasons and 2) for the ability to rollback a deployment.
-func (r *Reconciler) cleanupDeployment(ctx context.Context, oldMSs []*v1alpha2.VirtualMachineReplicaSet, deployment *v1alpha2.VirtualMachineDeployment) error {
+func (r *Reconciler) cleanupDeployment(ctx context.Context, oldMSs []*vmopv1.VirtualMachineReplicaSet, deployment *vmopv1.VirtualMachineDeployment) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	if deployment.Spec.RevisionHistoryLimit == nil {
@@ -488,7 +488,7 @@ func (r *Reconciler) cleanupDeployment(ctx context.Context, oldMSs []*v1alpha2.V
 	}
 
 	// Avoid deleting machine set with deletion timestamp set
-	aliveFilter := func(ms *v1alpha2.VirtualMachineReplicaSet) bool {
+	aliveFilter := func(ms *vmopv1.VirtualMachineReplicaSet) bool {
 		return ms != nil && ms.ObjectMeta.DeletionTimestamp.IsZero()
 	}
 
@@ -526,12 +526,12 @@ func (r *Reconciler) cleanupDeployment(ctx context.Context, oldMSs []*v1alpha2.V
 	return nil
 }
 
-func (r *Reconciler) updateMachineDeployment(ctx context.Context, d *v1alpha2.VirtualMachineDeployment, modify func(*v1alpha2.VirtualMachineDeployment)) error {
+func (r *Reconciler) updateMachineDeployment(ctx context.Context, d *vmopv1.VirtualMachineDeployment, modify func(*vmopv1.VirtualMachineDeployment)) error {
 	return updateMachineDeployment(ctx, r.Client, d, modify)
 }
 
 // We have this as standalone variant to be able to use it from the tests.
-func updateMachineDeployment(ctx context.Context, c client.Client, d *v1alpha2.VirtualMachineDeployment, modify func(*v1alpha2.VirtualMachineDeployment)) error {
+func updateMachineDeployment(ctx context.Context, c client.Client, d *vmopv1.VirtualMachineDeployment, modify func(*vmopv1.VirtualMachineDeployment)) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		if err := c.Get(ctx, client.ObjectKeyFromObject(d), d); err != nil {
 			return err
